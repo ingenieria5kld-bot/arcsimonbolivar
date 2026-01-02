@@ -1,0 +1,19 @@
+
+{
+  "name": "ARC Simón Bolívar - Ingeniería",
+  "short_name": "SIMBOL",
+  "description": "Sistema de Rondas de Ingeniería Naval",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#003366",
+  "theme_color": "#003366",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2942/2942007.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

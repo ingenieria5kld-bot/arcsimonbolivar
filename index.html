@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#003366">
+    <link rel="manifest" href="manifest.json">
     <title>Rondas ARC Simón Bolívar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -20,21 +21,14 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
         body { 
           font-family: 'Inter', sans-serif;
-          overscroll-behavior-y: contain; /* Evita el "pull to refresh" en tablets */
+          overscroll-behavior-y: contain; 
           -webkit-tap-highlight-color: transparent;
-          user-select: none; /* Evita selección de texto accidental en campo */
+          user-select: none; 
         }
         .bg-navy { background-color: #003366; }
         .text-navy { color: #003366; }
-        
-        /* Ajustes táctiles para botones */
-        button:active {
-          transform: scale(0.98);
-        }
-
-        /* Scrollbars elegantes para tablets */
+        button:active { transform: scale(0.98); }
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 <script type="importmap">
@@ -50,5 +44,17 @@
 </head>
 <body class="bg-slate-50 text-slate-900 overflow-x-hidden">
     <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').then(reg => {
+            console.log('SW registrado', reg);
+          }).catch(err => {
+            console.log('Error registro SW', err);
+          });
+        });
+      }
+    </script>
 </body>
 </html>
