@@ -1,6 +1,9 @@
 
 import { RoundData, EquipmentType } from '../types';
 import { EQUIPMENT_LABELS, ROUND_TIMES } from '../constants';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 declare const jspdf: any;
 
@@ -154,7 +157,7 @@ const PARAM_CONFIG: Record<string, { label: string, unit: string }> = {
   amperaje_ac: { label: "AMP", unit: "A" }
 };
 
-export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentType: EquipmentType | string, shouldDownload = true): any => {
+export const generateFormalPDF = async (rounds: RoundData[], date: string, equipmentType: EquipmentType | string, shouldDownload = true): Promise<any> => {
   const { jsPDF } = jspdf;
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -336,12 +339,33 @@ export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentTy
   doc.text("JEFE DEPARTAMENTO DE INGENIERÍA", 210, signY + 5, { align: "center" });
 
   if (shouldDownload) {
-    doc.save(`REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`);
+    const fileName = `REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const base64Data = doc.output('datauristring').split(',')[1];
+        const savedFile = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+        });
+
+        await Share.share({
+          url: savedFile.uri,
+          title: 'Reporte de Guardia',
+          dialogTitle: 'Compartir Reporte PDF'
+        });
+      } catch (e) {
+        console.error('Error saving/sharing PDF', e);
+        alert('Error al guardar/compartir el PDF: ' + JSON.stringify(e));
+      }
+    } else {
+      doc.save(fileName);
+    }
   }
   return doc.output('blob');
 };
 
-export const exportDetailedCSV = (rounds: RoundData[]) => {
+export const exportDetailedCSV = async (rounds: RoundData[]) => {
   if (rounds.length === 0) {
     alert("No hay datos para exportar.");
     return;
@@ -385,12 +409,34 @@ export const exportDetailedCSV = (rounds: RoundData[]) => {
   });
 
   const csvContent = "\uFEFF" + headers.join(";") + "\n" + rows.join("\n");
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `BASE_DATOS_INGENIERIA_ARC_SIMBOL_${new Date().toISOString().split('T')[0]}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const fileName = `BASE_DATOS_INGENIERIA_ARC_SIMBOL_${new Date().toISOString().split('T')[0]}.csv`;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const savedFile = await Filesystem.writeFile({
+        path: fileName,
+        data: csvContent,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8
+      });
+
+      await Share.share({
+        url: savedFile.uri,
+        title: 'Base de Datos CSV',
+        dialogTitle: 'Compartir CSV'
+      });
+    } catch (e) {
+      console.error('Error saving/sharing CSV', e);
+      alert('Error al guardar/compartir el CSV: ' + JSON.stringify(e));
+    }
+  } else {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 };

@@ -107,7 +107,7 @@ const App: React.FC = () => {
 
     setSyncing(true);
     try {
-        const pdfBlob = generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
+        const pdfBlob = await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
         if (pdfBlob) {
           const fileName = `REPORTE_${reportConfig.equipment.toUpperCase()}_GUARDIA_${reportConfig.date}.pdf`;
           const success = await uploadToDrive(pdfBlob, fileName, reportConfig.equipment);
@@ -392,7 +392,7 @@ const App: React.FC = () => {
 
             <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 mb-4">
                 <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Exportar Base de Datos</p>
-                <button onClick={() => exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest">Exportar CSV (Excel)</button>
+                <button onClick={async () => await exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest">Exportar CSV (Excel)</button>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl mb-8">
