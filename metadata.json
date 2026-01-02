@@ -1,0 +1,17 @@
+{
+  "name": "Rondas ARC Simón Bolívar",
+  "description": "Sistema avanzado de registro de parámetros y rondas de ingeniería para unidades navales, con análisis asistido por IA.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ],
+  "android": {
+    "permissions": [
+      "android.permission.INTERNET",
+      "android.permission.CAMERA",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.READ_EXTERNAL_STORAGE"
+    ],
+    "screenOrientation": "landscape"
+  }
+}
