@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'simbol-v2-proto';
+const CACHE_NAME = 'simbol-v3-final';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -14,14 +14,20 @@ const ASSETS_TO_CACHE = [
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js',
   'https://unpkg.com/html5-qrcode',
   'https://esm.sh/react@^19.2.3',
-  'https://esm.sh/react-dom@^19.2.3'
+  'https://esm.sh/react-dom@^19.2.3',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Instalando caché de SIMBOL...');
-      return cache.addAll(ASSETS_TO_CACHE);
+      console.log('SIMBOL: Cacheando archivos para modo offline...');
+      // Intentamos cachear cada recurso individualmente para evitar que uno falle y detenga todo
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map(url => 
+          cache.add(url).catch(err => console.error(`Fallo al cachear: ${url}`, err))
+        )
+      );
     })
   );
   self.skipWaiting();
@@ -39,10 +45,21 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Intentar servir desde caché, si no, ir a la red
   event.respondWith(
     caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+      // Retorna el archivo de caché o intenta buscarlo en internet
+      return response || fetch(event.request).then(fetchRes => {
+        return caches.open(CACHE_NAME).then(cache => {
+          // Si es un archivo nuevo que no teníamos, lo guardamos para la próxima
+          if (event.request.url.startsWith('http')) {
+            cache.put(event.request, fetchRes.clone());
+          }
+          return fetchRes;
+        });
+      });
+    }).catch(() => {
+      // Si falla todo (estás offline y no hay caché), podrías retornar una página de error
+      console.log('Recurso no disponible offline');
     })
   );
 });
