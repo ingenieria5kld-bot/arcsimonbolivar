@@ -2,7 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 export const analyzeParameters = async (equipmentType: string, parameters: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Inicializar justo antes de usar
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -36,7 +38,9 @@ export const analyzeParameters = async (equipmentType: string, parameters: any) 
 };
 
 export const analyzeTrends = async (equipmentType: string, history: any[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Inicializar justo antes de usar
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",

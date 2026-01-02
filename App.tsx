@@ -31,6 +31,7 @@ const App: React.FC = () => {
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [currentOrigin, setCurrentOrigin] = useState('');
+  const [isOfflineReady, setIsOfflineReady] = useState(false);
   
   const DEFAULT_START = "2026-01-01T09:00";
   const DEFAULT_END = "2026-01-02T08:00";
@@ -62,6 +63,13 @@ const App: React.FC = () => {
     if (storedRounds) setRounds(JSON.parse(storedRounds));
 
     initDriveApi().catch(err => console.error("Error GAPI:", err));
+
+    // Verificar si el Service Worker ya cacheó la app
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(() => {
+        setIsOfflineReady(true);
+      });
+    }
   }, []);
 
   const handleLogout = () => {
@@ -262,7 +270,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Grado</label>
-                <input name="grade" placeholder="Ej: TK" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold uppercase" required />
+                <input name="grade" placeholder="Ej: ST" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold uppercase" required />
               </div>
               <div className="col-span-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre</label>
@@ -303,7 +311,15 @@ const App: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-500">
           <div className="bg-navy text-white p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
             <div className="relative z-10">
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-2">Guardia Activa</p>
+              <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-2">Guardia Activa</p>
+                {isOfflineReady && (
+                  <div className="bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-500/30 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+                    Listo para Modo Offline
+                  </div>
+                )}
+              </div>
               <div className="flex flex-col gap-1">
                 <span className="text-sm font-bold opacity-80">Inicio: {new Date(sessionData.guardStart).toLocaleString()}</span>
                 <span className="text-sm font-bold opacity-80">Fin: {new Date(sessionData.guardEnd).toLocaleString()}</span>

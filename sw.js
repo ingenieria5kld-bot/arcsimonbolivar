@@ -1,12 +1,9 @@
 
-const CACHE_NAME = 'simbol-v3-final';
+const CACHE_NAME = 'simbol-v5-final';
+
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './index.tsx',
-  './App.tsx',
-  './types.ts',
-  './constants.tsx',
   './manifest.json',
   'https://cdn.tailwindcss.com',
   'https://cdn.jsdelivr.net/npm/chart.js',
@@ -21,12 +18,9 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('SIMBOL: Cacheando archivos para modo offline...');
-      // Intentamos cachear cada recurso individualmente para evitar que uno falle y detenga todo
+      console.log('SIMBOL: Cacheando recursos...');
       return Promise.allSettled(
-        ASSETS_TO_CACHE.map(url => 
-          cache.add(url).catch(err => console.error(`Fallo al cachear: ${url}`, err))
-        )
+        ASSETS_TO_CACHE.map(url => cache.add(url).catch(() => {}))
       );
     })
   );
@@ -35,31 +29,23 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
-      );
+    caches.keys().then((keys) => {
+      return Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
     })
   );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
+  // Para archivos locales y librerías externas, intentar caché primero
   event.respondWith(
     caches.match(event.request).then((response) => {
-      // Retorna el archivo de caché o intenta buscarlo en internet
-      return response || fetch(event.request).then(fetchRes => {
-        return caches.open(CACHE_NAME).then(cache => {
-          // Si es un archivo nuevo que no teníamos, lo guardamos para la próxima
-          if (event.request.url.startsWith('http')) {
-            cache.put(event.request, fetchRes.clone());
-          }
-          return fetchRes;
-        });
+      return response || fetch(event.request).catch(() => {
+        // Fallback si no hay red ni caché
+        if (event.request.mode === 'navigate') {
+          return caches.match('./index.html');
+        }
       });
-    }).catch(() => {
-      // Si falla todo (estás offline y no hay caché), podrías retornar una página de error
-      console.log('Recurso no disponible offline');
     })
   );
 });
