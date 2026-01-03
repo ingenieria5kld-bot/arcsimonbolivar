@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { View, UserSG, UserRole } from '../types';
+import { View, UserSG, UserRole, UserSpecialty } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,6 +16,12 @@ const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.SG_ENGINEERING]: 'S/G Ingeniería',
   [UserRole.CHIEF_GUARD]: 'Jefe de Guardia',
   [UserRole.CHIEF_ENGINEER]: 'Ingeniero Jefe'
+};
+
+const SPECIALTY_LABELS: Record<UserSpecialty, string> = {
+  [UserSpecialty.PROPULSION]: 'Motorista',
+  [UserSpecialty.ELECTRICITY]: 'Electricista',
+  [UserSpecialty.ALL]: 'Administración'
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, user, onLogout, canLogout }) => {
@@ -39,7 +45,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, u
             <div className="flex items-center gap-2 md:gap-6">
               <div className="text-right hidden sm:block border-r border-white/20 pr-4">
                 <p className="text-[10px] uppercase font-black opacity-75 tracking-widest leading-none mb-1">
-                  {user ? ROLE_LABELS[user.role] : 'Usuario'}
+                  {user ? `${ROLE_LABELS[user.role]} - ${SPECIALTY_LABELS[user.specialty]}` : 'Usuario'}
                 </p>
                 <p className="text-sm font-semibold leading-none">{user?.grade} {user?.name}</p>
               </div>
@@ -71,7 +77,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, u
       {showNav && (
         <footer className="bg-slate-100 border-t py-6 text-center text-slate-500 text-xs">
           <p>© {new Date().getFullYear()} ARC Simón Bolívar - Departamento de Ingeniería</p>
-          <p className="mt-1 font-bold opacity-60">Sistema de Control Naval Asistido por IA - Nivel de Acceso: {user ? ROLE_LABELS[user.role].toUpperCase() : 'N/A'}</p>
+          <p className="mt-1 font-bold opacity-60 italic uppercase tracking-widest">
+            {user ? `División: ${SPECIALTY_LABELS[user.specialty]}` : 'Sistema de Control Naval'}
+          </p>
         </footer>
       )}
     </div>

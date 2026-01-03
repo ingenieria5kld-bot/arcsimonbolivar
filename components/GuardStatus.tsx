@@ -1,45 +1,42 @@
 
 import React, { useState } from 'react';
-import { RoundData, EquipmentType } from '../types';
-import { ROUND_TIMES, EQUIPMENT_LABELS, EQUIPMENT_UNITS_MAP } from '../constants';
+import { RoundData, EquipmentType, UserSpecialty, UserSG, UserRole } from '../types';
+import { ROUND_TIMES, EQUIPMENT_LABELS, EQUIPMENT_UNITS_MAP, SPECIALTY_EQUIPMENT } from '../constants';
 
 interface GuardStatusProps {
   rounds: RoundData[];
-  guardStart: string; // ISO string YYYY-MM-DDTHH:mm
-  guardEnd: string;   // ISO string YYYY-MM-DDTHH:mm
+  guardStart: string; 
+  guardEnd: string;   
   activeHour: string;
-  onSelectRound: (hour: string, equipment: string, unit: string) => void;
+  user: UserSG;
+  onSelectRound: (hour: string, equipment: string, unit: string, existingRound?: RoundData) => void;
   onBack: () => void;
 }
 
-export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, guardEnd, activeHour, onSelectRound, onBack }) => {
-  const [selectedSystem, setSelectedSystem] = useState<EquipmentType>(EquipmentType.GENERADORES);
+export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, guardEnd, activeHour, user, onSelectRound, onBack }) => {
+  const allowedEquipments = SPECIALTY_EQUIPMENT[user.specialty] || Object.values(EquipmentType);
+  const [selectedSystem, setSelectedSystem] = useState<EquipmentType>(allowedEquipments[0]);
   
+  const isHighRank = user.role === UserRole.CHIEF_ENGINEER || user.role === UserRole.CHIEF_GUARD;
+
   const getCellStatus = (hourRonda: string, equipment: string, unit: string) => {
     const gStart = new Date(guardStart);
     const gEnd = new Date(guardEnd);
     
-    // Determinar la fecha/hora absoluta de esta celda
     const [h] = hourRonda.split(':').map(Number);
     const rDate = new Date(gStart.getFullYear(), gStart.getMonth(), gStart.getDate(), h, 0, 0);
     
-    // Lógica Naval: Si la hora es menor a la hora de inicio (ej: 09:00), es del día siguiente
     if (h < gStart.getHours()) {
       rDate.setDate(rDate.getDate() + 1);
     }
 
-    // Regla 1: ¿Está dentro del rango de la guardia definida?
     const isInRange = rDate >= gStart && rDate <= gEnd;
-    
-    // Regla 2: ¿Es el futuro real?
     const now = new Date();
-    const margin = now.getTime() + (70 * 60 * 1000); // 70 min margen
+    const margin = now.getTime() + (70 * 60 * 1000); 
     const isFutureReal = rDate.getTime() > margin;
 
-    // Regla 3: ¿Ya fue completado?
-    // Usamos el prefijo de la fecha de inicio de guardia como identificador
     const guardDay = guardStart.split('T')[0];
-    const isCompleted = rounds.some(r => 
+    const existingRound = rounds.find(r => 
       r.fecha === guardDay && 
       r.ronda_de_inspeccion === hourRonda && 
       r.equipo_principal === equipment &&
@@ -48,7 +45,7 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
 
     return { 
       isEnabled: isInRange && !isFutureReal, 
-      isCompleted, 
+      existingRound, 
       isOutOfGuard: !isInRange,
       isFuture: isFutureReal && isInRange
     };
@@ -64,12 +61,13 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
           <div className="flex flex-col text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 gap-1">
              <span className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                Guardia: {new Date(guardStart).toLocaleString()} → {new Date(guardEnd).toLocaleString()}
+                Guardia: {new Date(guardStart).toLocaleString()}
              </span>
-             <span className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                Turno Actual: {activeHour} HS
-             </span>
+             {isHighRank && (
+               <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-[9px] font-black uppercase mt-1">
+                 Modo Auditoría Habilitado
+               </span>
+             )}
           </div>
         </div>
         <button onClick={onBack} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-8 py-3 rounded-2xl font-black text-[10px] uppercase transition-all">
@@ -79,19 +77,21 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
 
       <div className="space-y-8">
         <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/50">
-          <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4 block">Filtrar Sistema Técnico</label>
+          <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4 block">
+            Filtrar Sistema Técnico ({user.specialty === UserSpecialty.PROPULSION ? 'Propulsión' : user.specialty === UserSpecialty.ELECTRICITY ? 'Electricidad' : 'Global'})
+          </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
-            {Object.entries(EQUIPMENT_LABELS).map(([key, label]) => (
+            {allowedEquipments.map((key) => (
               <button
                 key={key}
-                onClick={() => setSelectedSystem(key as EquipmentType)}
+                onClick={() => setSelectedSystem(key)}
                 className={`text-[9px] font-black px-4 py-3 rounded-xl border-2 transition-all uppercase leading-tight ${
                   selectedSystem === key 
                   ? 'bg-navy border-navy text-white shadow-lg' 
                   : 'bg-white border-slate-100 text-slate-400 hover:border-blue-200'
                 }`}
               >
-                {label}
+                {EQUIPMENT_LABELS[key]}
               </button>
             ))}
           </div>
@@ -115,17 +115,24 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
                 <tr key={unit}>
                   <td className="sticky left-0 z-10 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 text-[11px] font-black text-navy uppercase">{unit}</td>
                   {ROUND_TIMES.map(hour => {
-                    const { isEnabled, isCompleted, isOutOfGuard, isFuture } = getCellStatus(hour, selectedSystem, unit);
+                    const { isEnabled, existingRound, isOutOfGuard, isFuture } = getCellStatus(hour, selectedSystem, unit);
                     const isSessionHour = hour === activeHour;
                     
                     let bg = "bg-white border-slate-100 opacity-20 grayscale cursor-not-allowed";
                     let icon = "🔒";
                     let action = () => {};
 
-                    if (isCompleted) {
+                    if (existingRound) {
                       bg = "bg-emerald-500 border-emerald-600 shadow-emerald-200 cursor-pointer text-white";
-                      icon = "✓";
-                      action = () => onSelectRound(hour, selectedSystem, unit);
+                      icon = existingRound.audit_trail ? "⚠️" : "✓";
+                      // Solo oficiales/jefes pueden hacer clic para editar una ronda ya completada
+                      if (isHighRank) {
+                        action = () => {
+                           if (window.confirm(`¿Desea entrar en Modo Corrección para el equipo ${unit} a las ${hour} HS? (Se generará rastro de auditoría)`)) {
+                              onSelectRound(hour, selectedSystem, unit, existingRound);
+                           }
+                        };
+                      }
                     } else if (isOutOfGuard) {
                       bg = "bg-slate-200 border-slate-300 opacity-30 cursor-not-allowed";
                       icon = "∅";
@@ -144,7 +151,8 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
                       <td key={hour} className="p-1">
                         <button
                           onClick={action}
-                          disabled={!isEnabled && !isCompleted}
+                          disabled={!isEnabled && !existingRound}
+                          title={existingRound && !isHighRank ? "Completado (Solo editables por Oficial/Jefe)" : ""}
                           className={`w-12 h-12 rounded-2xl border-2 flex items-center justify-center text-sm font-black transition-all ${bg}`}
                         >
                           {icon}
@@ -158,21 +166,6 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
           </table>
         </div>
       </div>
-
-      <div className="mt-10 flex flex-wrap gap-6 pt-10 border-t border-slate-50">
-        <Legend color="bg-blue-600 border-blue-700" label="Seleccionada" />
-        <Legend color="bg-emerald-500" label="Completada" />
-        <Legend color="bg-blue-100" label="Habilitada (En Rango)" />
-        <Legend color="bg-slate-200 opacity-30" label="Fuera de Guardia" />
-        <Legend color="bg-white border-slate-100 opacity-20" label="Futuro / Bloqueado" />
-      </div>
     </div>
   );
 };
-
-const Legend = ({ color, label }: any) => (
-  <div className="flex items-center gap-3">
-    <div className={`w-6 h-6 rounded-xl border-2 ${color}`}></div>
-    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</span>
-  </div>
-);

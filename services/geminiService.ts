@@ -2,8 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 export const analyzeParameters = async (equipmentType: string, parameters: any) => {
-  // Inicializar justo antes de usar
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  // Always use process.env.API_KEY directly for initialization.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response = await ai.models.generateContent({
@@ -25,7 +25,9 @@ export const analyzeParameters = async (equipmentType: string, parameters: any) 
       }
     });
 
-    return JSON.parse(response.text || '{}');
+    // Directly access .text property from GenerateContentResponse.
+    const jsonStr = response.text || '{}';
+    return JSON.parse(jsonStr.trim());
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
     return {
@@ -38,8 +40,8 @@ export const analyzeParameters = async (equipmentType: string, parameters: any) 
 };
 
 export const analyzeTrends = async (equipmentType: string, history: any[]) => {
-  // Inicializar justo antes de usar
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  // Always use process.env.API_KEY directly for initialization.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response = await ai.models.generateContent({
@@ -67,7 +69,9 @@ export const analyzeTrends = async (equipmentType: string, history: any[]) => {
       }
     });
 
-    return JSON.parse(response.text || '{}');
+    // Directly access .text property from GenerateContentResponse.
+    const jsonStr = response.text || '{}';
+    return JSON.parse(jsonStr.trim());
   } catch (error) {
     console.error("Gemini Trend Analysis Error:", error);
     return {

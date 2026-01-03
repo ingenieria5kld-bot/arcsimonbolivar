@@ -14,14 +14,22 @@ export enum View {
   TENDENCIES = 'TENDENCIES',
   ALARM_CONFIG = 'ALARM_CONFIG',
   SIGNATURE = 'SIGNATURE',
-  GUARD_STATUS = 'GUARD_STATUS'
+  GUARD_STATUS = 'GUARD_STATUS',
+  EQUIPMENT_HOURS = 'EQUIPMENT_HOURS',
+  APP_GUIDE = 'APP_GUIDE'
 }
 
 export enum UserRole {
   OPERATOR = 'OPERATOR', // Suboficial Guardia - Operador
   SG_ENGINEERING = 'SG_ENGINEERING', // Suboficial Guardia Ingenieria
-  CHIEF_GUARD = 'CHIEF_GUARD', // Jefe de Guardia
+  CHIEF_GUARD = 'CHIEF_GUARD', // Jefe de Guardia (Oficial)
   CHIEF_ENGINEER = 'CHIEF_ENGINEER' // Ingeniero Jefe
+}
+
+export enum UserSpecialty {
+  PROPULSION = 'PROPULSION', // Motorista
+  ELECTRICITY = 'ELECTRICITY', // Electricista
+  ALL = 'ALL' // Solo para Ingeniero Jefe / Admin
 }
 
 export interface UserSG {
@@ -29,6 +37,14 @@ export interface UserSG {
   name: string;
   password?: string;
   role: UserRole;
+  specialty: UserSpecialty;
+}
+
+export interface AuditLog {
+  edited_by: string;
+  edited_at: string;
+  previous_values: Partial<RoundData>;
+  reason?: string;
 }
 
 export interface RoundData {
@@ -45,7 +61,9 @@ export interface RoundData {
   UNIDAD_ACTIVA: string;
   TIMESTAMP_GUARDADO: string;
   horometro?: number;
-  signature?: string; // Firma digital en base64
+  trim?: number;
+  signature?: string; 
+  audit_trail?: AuditLog[];
   [key: string]: any;
 }
 

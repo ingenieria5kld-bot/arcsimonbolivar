@@ -164,13 +164,11 @@ export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentTy
 
   const LITERS_TO_GALLONS = 0.264172;
   
-  // Date es el identificador YYYY-MM-DD del inicio de la guardia
   const d = new Date(date + 'T12:00:00');
   const dNext = new Date(d);
   dNext.setDate(dNext.getDate() + 1);
   const nextDateLabel = dNext.toISOString().split('T')[0];
 
-  // Filtramos todas las rondas que pertenezcan a este inicio de guardia y sistema
   const equipmentRounds = rounds.filter(r => 
     r.equipo_principal === equipmentType && r.fecha === date
   );
@@ -207,11 +205,21 @@ export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentTy
     doc.text(`SISTEMA: ${equipmentLabel.toUpperCase()}`, 215, 32);
   };
 
-  drawPageHeader();
-  let currentY = 40;
+  const drawPageFooter = (pageNumber: number, totalPages: number) => {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Página ${pageNumber} de ${totalPages}`, 277, 200, { align: 'right' });
+  };
+
+  const totalPagesCount = uniqueUnits.length;
 
   uniqueUnits.forEach((unitName, index) => {
+    if (index > 0) doc.addPage();
+    drawPageHeader();
+    
+    let currentY = 40;
     const unitRounds = equipmentRounds.filter(r => r.UNIDAD_ACTIVA === unitName);
+    
     doc.setFillColor(230, 235, 245);
     doc.rect(10, currentY, 277, 7, 'F');
     doc.setFontSize(8);
@@ -262,78 +270,80 @@ export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentTy
       margin: { left: 10, right: 10 }
     });
 
-    currentY = doc.lastAutoTable.finalY + 8;
-    if (index < uniqueUnits.length - 1 && currentY > 170) {
-      doc.addPage();
-      drawPageHeader();
-      currentY = 40;
+    currentY = (doc as any).lastAutoTable.finalY + 10;
+
+    // --- BLOQUE DE CIERRE OPERATIVO Y OBSERVACIONES (BAJO CADA EQUIPO) ---
+    doc.setDrawColor(0, 51, 102);
+    doc.setFillColor(245, 247, 250);
+    const summaryBoxHeight = 25;
+    
+    // Si no cabe en la página actual, podrías agregar lógica de salto, pero en landscape suele haber espacio.
+    doc.rect(10, currentY, 277, summaryBoxHeight, 'F');
+    doc.rect(10, currentY, 277, summaryBoxHeight);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(`CIERRE OPERATIVO DE GUARDIA (${date} 09:00 - ${nextDateLabel} 08:00)`, 15, currentY + 6);
+
+    const round09 = unitRounds.find(r => r.ronda_de_inspeccion === "09:00");
+    const round08 = unitRounds.find(r => r.ronda_de_inspeccion === "08:00");
+    
+    const hIni = round09?.horometro || "N/R";
+    const hFin = round08?.horometro || "N/R";
+    
+    let extraInfo = "";
+    if (equipmentType === EquipmentType.GENERADORES || equipmentType === EquipmentType.PROPULSORES) {
+      if (round08?.trim !== undefined && round09?.trim !== undefined) {
+        // FIX: Removed parseFloat since trim is defined as a number in RoundData
+        const diffLiters = Math.abs(round08.trim - round09.trim);
+        const gallons = diffLiters * LITERS_TO_GALLONS;
+        extraInfo = `| Consumo: ${gallons.toFixed(1)} Gal.`;
+      }
     }
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.text(`H. Inicial (09:00): ${hIni} Hrs`, 15, currentY + 12);
+    doc.text(`H. Final (08:00): ${hFin} Hrs ${extraInfo}`, 15, currentY + 18);
+
+    currentY += summaryBoxHeight + 5;
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.text("OBSERVACIONES TÉCNICAS Y NOVEDADES REPORTADAS:", 10, currentY);
+    
+    const unitObs = unitRounds
+      .filter(r => r.observaciones)
+      .map(r => `[${r.ronda_de_inspeccion}]: ${r.observaciones}`)
+      .join(" | ");
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    const splitObs = doc.splitTextToSize(unitObs || "Sin novedades reportadas para esta unidad durante la guardia.", 270);
+    doc.text(splitObs, 10, currentY + 5);
+
+    // --- SECCIÓN DE FIRMAS (SOLO AL FINAL DEL DOCUMENTO) ---
+    const isLastPage = index === uniqueUnits.length - 1;
+    if (isLastPage) {
+      const signY = 185;
+      doc.setDrawColor(180);
+      doc.setLineWidth(0.2);
+      
+      // Líneas de firma
+      doc.line(20, signY, 90, signY);       // Suboficial
+      doc.line(113.5, signY, 183.5, signY); // Oficial
+      doc.line(207, signY, 277, signY);     // Jefe
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      
+      // Etiquetas de firma
+      doc.text("SUBOFICIAL DE GUARDIA INGENIERÍA", 55, signY + 5, { align: "center" });
+      doc.text("OFICIAL DE GUARDIA INGENIERÍA", 148.5, signY + 5, { align: "center" });
+      doc.text("JEFE DEPARTAMENTO DE INGENIERÍA", 242, signY + 5, { align: "center" });
+    }
+
+    drawPageFooter(index + 1, totalPagesCount);
   });
-
-  // Espacio para resumen final
-  if (currentY > 180) {
-     doc.addPage();
-     drawPageHeader();
-     currentY = 40;
-  }
-
-  doc.setDrawColor(0, 51, 102);
-  doc.setFillColor(245, 247, 250);
-  const summaryBoxHeight = Math.max(24, Math.ceil(uniqueUnits.length / 3) * 12 + 10);
-  doc.rect(10, currentY, 277, summaryBoxHeight, 'F');
-  doc.rect(10, currentY, 277, summaryBoxHeight);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.text(`CIERRE OPERATIVO DE GUARDIA (${date} 09:00 - ${nextDateLabel} 08:00)`, 15, currentY + 6);
-  
-  let hX = 15;
-  let hY = currentY + 12;
-  uniqueUnits.forEach((unit, idx) => {
-     const round09 = equipmentRounds.find(r => r.UNIDAD_ACTIVA === unit && r.ronda_de_inspeccion === "09:00");
-     const round08 = equipmentRounds.find(r => r.UNIDAD_ACTIVA === unit && r.ronda_de_inspeccion === "08:00");
-     const hVal = round08?.horometro || "N/R";
-     
-     let extraInfo = "";
-     if (equipmentType === EquipmentType.GENERADORES || equipmentType === EquipmentType.PROPULSORES) {
-        if (round08?.trim !== undefined && round09?.trim !== undefined) {
-           const diffLiters = Math.abs(parseFloat(round08.trim) - parseFloat(round09.trim));
-           const gallons = diffLiters * LITERS_TO_GALLONS;
-           extraInfo = `Consumo: ${gallons.toFixed(1)} Gal.`;
-        }
-     }
-     
-     if (idx > 0 && idx % 3 === 0) {
-        hX = 15;
-        hY += 12;
-     }
-     doc.setFontSize(7);
-     doc.setFont("helvetica", "bold");
-     doc.text(`${unit.toUpperCase()}:`, hX, hY);
-     doc.setFont("helvetica", "normal");
-     doc.text(`Horómetro Final: ${hVal} Hrs. ${extraInfo}`, hX, hY + 4);
-     hX += 90;
-  });
-
-  currentY += summaryBoxHeight + 8;
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "bold");
-  doc.text("OBSERVACIONES TÉCNICAS Y NOVEDADES:", 10, currentY);
-  const allObs = equipmentRounds
-    .filter(r => r.observaciones)
-    .map(r => `[${r.ronda_de_inspeccion} - ${r.UNIDAD_ACTIVA}]: ${r.observaciones}`)
-    .join(" | ");
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.text(doc.splitTextToSize(allObs || "Sin novedades reportadas durante la guardia.", 270), 10, currentY + 4);
-
-  const signY = 185;
-  doc.setDrawColor(180);
-  doc.line(30, signY, 110, signY);
-  doc.line(170, signY, 250, signY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("SUBOFICIAL DE GUARDIA INGENIERÍA", 70, signY + 5, { align: "center" });
-  doc.text("JEFE DEPARTAMENTO DE INGENIERÍA", 210, signY + 5, { align: "center" });
 
   if (shouldDownload) {
     doc.save(`REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`);

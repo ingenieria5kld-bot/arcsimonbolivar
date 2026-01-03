@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { UserSG, StaffLists, UserRole } from '../types';
+import { UserSG, StaffLists, UserRole, UserSpecialty } from '../types';
 import { STAFF_LISTS_KEY } from '../constants';
 
 interface AdminListsProps {
@@ -16,8 +16,17 @@ const ROLE_CONFIG: Record<UserRole, { label: string, color: string }> = {
   [UserRole.CHIEF_ENGINEER]: { label: 'Ingeniero Jefe', color: 'bg-rose-100 text-rose-700' }
 };
 
+const SPECIALTY_CONFIG: Record<UserSpecialty, { label: string, color: string }> = {
+  [UserSpecialty.PROPULSION]: { label: 'Motorista', color: 'bg-slate-100 text-slate-700' },
+  [UserSpecialty.ELECTRICITY]: { label: 'Electricista', color: 'bg-yellow-100 text-yellow-700' },
+  [UserSpecialty.ALL]: { label: 'Todas', color: 'bg-navy text-white' }
+};
+
 export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffLists, onBack }) => {
-  const [newUser, setNewUser] = useState<Partial<UserSG>>({ role: UserRole.OPERATOR });
+  const [newUser, setNewUser] = useState<Partial<UserSG>>({ 
+    role: UserRole.OPERATOR, 
+    specialty: UserSpecialty.PROPULSION 
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newPass, setNewPass] = useState('');
 
@@ -32,7 +41,7 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
     
     setStaffLists(updated);
     localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updated));
-    setNewUser({ role: UserRole.OPERATOR });
+    setNewUser({ role: UserRole.OPERATOR, specialty: UserSpecialty.PROPULSION });
     alert("Usuario añadido correctamente.");
   };
 
@@ -71,7 +80,6 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Formulario Nuevo Usuario */}
         <div className="lg:col-span-1">
           <form onSubmit={handleAddUser} className="bg-white p-6 rounded-[2rem] shadow-xl border border-slate-100 space-y-4 sticky top-24">
             <h3 className="text-sm font-black text-navy uppercase mb-4 flex items-center gap-2">
@@ -104,7 +112,7 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
             </div>
 
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Rol en Ingeniería</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Rol</label>
               <select 
                 className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-2.5 text-sm font-bold focus:bg-white focus:border-navy outline-none transition-all"
                 value={newUser.role}
@@ -117,7 +125,20 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
             </div>
 
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Contraseña Inicial</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidad (División)</label>
+              <select 
+                className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-2.5 text-sm font-bold focus:bg-white focus:border-navy outline-none transition-all"
+                value={newUser.specialty}
+                onChange={e => setNewUser({...newUser, specialty: e.target.value as UserSpecialty})}
+              >
+                <option value={UserSpecialty.PROPULSION}>Motorista (Propulsión)</option>
+                <option value={UserSpecialty.ELECTRICITY}>Electricista (Electricidad)</option>
+                <option value={UserSpecialty.ALL}>Ingeniero Jefe (Todas)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Contraseña</label>
               <input 
                 type="password" 
                 className="w-full border-2 border-slate-50 bg-slate-50 rounded-xl px-4 py-2.5 text-sm font-bold focus:bg-white focus:border-navy outline-none transition-all"
@@ -128,12 +149,11 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
             </div>
 
             <button type="submit" className="w-full bg-navy text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-navy/20 hover:scale-[1.02] active:scale-95 transition-all">
-              Dar de Alta Personal
+              Dar de Alta
             </button>
           </form>
         </div>
 
-        {/* Lista de Usuarios */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between px-4">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Personal Registrado ({staffLists.sg.length})</h3>
@@ -148,9 +168,14 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
                   </div>
                   <div className="flex-1">
                     <h4 className="text-sm font-black text-navy uppercase leading-none mb-1">{u.grade} {u.name}</h4>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${ROLE_CONFIG[u.role].color}`}>
-                      {ROLE_CONFIG[u.role].label}
-                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${ROLE_CONFIG[u.role].color}`}>
+                        {ROLE_CONFIG[u.role].label}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${SPECIALTY_CONFIG[u.specialty].color}`}>
+                        {SPECIALTY_CONFIG[u.specialty].label}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -191,12 +216,6 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
               </div>
             ))}
           </div>
-
-          {staffLists.sg.length === 0 && (
-            <div className="text-center py-20 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
-              <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">No hay personal registrado</p>
-            </div>
-          )}
         </div>
       </div>
     </div>

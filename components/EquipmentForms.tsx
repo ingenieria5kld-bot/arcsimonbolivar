@@ -24,12 +24,14 @@ const Field: React.FC<{
   required?: boolean;
   previousValue?: any;
   placeholder?: string;
-}> = ({ label, name, type = "number", step = "0.01", min, max, minOpt, maxOpt, value, onChange, required, previousValue, placeholder }) => {
+  disabled?: boolean;
+}> = ({ label, name, type = "number", step = "0.01", min, max, minOpt, maxOpt, value, onChange, required, previousValue, placeholder, disabled }) => {
   
   const numValue = parseFloat(value);
   const numPrev = parseFloat(previousValue);
 
   const getStatusClasses = () => {
+    if (disabled) return "bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed";
     if (isNaN(numValue) || type !== "number") return "border-slate-200 focus:border-blue-500";
     
     const minCrit = min ? parseFloat(min) : -Infinity;
@@ -47,6 +49,7 @@ const Field: React.FC<{
   };
 
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    if (disabled) return;
     if (type === "number" && !isNaN(numValue) && !isNaN(numPrev) && numPrev !== 0) {
       const diff = Math.abs((numValue - numPrev) / numPrev);
       if (diff > 0.30) {
@@ -74,6 +77,7 @@ const Field: React.FC<{
         onBlur={handleBlur}
         required={required}
         placeholder={placeholder}
+        disabled={disabled}
         className={`border rounded-lg px-3 py-1.5 text-sm outline-none transition-all ${getStatusClasses()}`}
       />
     </div>
