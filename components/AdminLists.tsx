@@ -7,6 +7,7 @@ interface AdminListsProps {
   staffLists: StaffLists;
   setStaffLists: (lists: StaffLists) => void;
   onBack: () => void;
+  triggerSync: () => void;
 }
 
 const ROLE_CONFIG: Record<UserRole, { label: string, color: string }> = {
@@ -22,7 +23,7 @@ const SPECIALTY_CONFIG: Record<UserSpecialty, { label: string, color: string }> 
   [UserSpecialty.ALL]: { label: 'Todas', color: 'bg-navy text-white' }
 };
 
-export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffLists, onBack }) => {
+export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffLists, onBack, triggerSync }) => {
   const [newUser, setNewUser] = useState<Partial<UserSG>>({ 
     role: UserRole.OPERATOR, 
     specialty: UserSpecialty.PROPULSION 
@@ -43,6 +44,7 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
     localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updated));
     setNewUser({ role: UserRole.OPERATOR, specialty: UserSpecialty.PROPULSION });
     alert("Usuario añadido correctamente.");
+    triggerSync();
   };
 
   const handleDeleteUser = (index: number) => {
@@ -54,6 +56,7 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
     const updated: StaffLists = { ...staffLists, sg: updatedSg };
     setStaffLists(updated);
     localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updated));
+    triggerSync();
   };
 
   const handleChangePassword = (index: number) => {

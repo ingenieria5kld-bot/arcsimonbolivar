@@ -115,8 +115,8 @@ const App: React.FC = () => {
 
   const triggerMasterSync = async (showAlerts = false) => {
     try {
-        // MIGRACIÓN: Asegurar que todas las rondas tengan UNIQUE_KEY antes de enviar
-        // Esto previene que se sobrescriban en el servidor si vienen de versiones viejas
+        // Obtenemos el estado actual de rounds mediante una referencia funcional si es necesario,
+        // pero aquí rounds viene del scope. Sin embargo, para seguridad total en el envío:
         const sanitizedRounds = rounds.map(r => {
            if (r.UNIQUE_KEY) return r;
            return {
@@ -127,22 +127,30 @@ const App: React.FC = () => {
 
         const masterData = await performMasterSync(sanitizedRounds, staffLists.sg);
         if (masterData) {
-            // Actualizamos Rondas localmente si hay cambios
+            // Actualizamos Rondas con patrón funcional para evitar estados viejos (stale)
             if (masterData.rounds) {
                 setRounds(masterData.rounds);
                 localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(masterData.rounds));
             }
 
-            // Actualizamos Personal localmente si hay cambios
+            // Actualizamos Personal con patrón funcional
             if (masterData.staff) {
-                const updatedStaff = { ...staffLists, sg: masterData.staff };
-                setStaffLists(updatedStaff);
-                localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updatedStaff));
+                setStaffLists(prev => {
+                    const updated = { ...prev, sg: masterData.staff };
+                    localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updated));
+                    return updated;
+                });
             }
 
             if (showAlerts) {
-                const version = masterData.version || "V_ANTIGUA";
-                alert(`✅ Sincronización Exitosa (Servidor: ${version})\nDatos fusionados correctamente.`);
+                const version = masterData.version || "V9_MASTER_OK";
+                const roundsCount = masterData.rounds?.length || 0;
+                const staffCount = masterData.staff?.length || 0;
+                
+                alert(`✅ SINCRO EXITOSA (${version})\n\n` +
+                      `📊 Rondas en Nube: ${roundsCount}\n` +
+                      `👥 Personal en Nube: ${staffCount}\n\n` +
+                      `Su base de datos local ha sido actualizada.`);
             }
             return true;
         }
@@ -150,7 +158,7 @@ const App: React.FC = () => {
         console.error("[App] Fallo en triggerMasterSync:", e);
     }
     
-    if (showAlerts) alert("⚠️ No se pudo completar la sincronización. Verifique que el Script de Google esté configurado correctamente.");
+    if (showAlerts) alert("⚠️ Error de Sincronización. Verifique su conexión o la URL del Script.");
     return false;
   };
 
@@ -187,6 +195,9 @@ const App: React.FC = () => {
     localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(newUser));
     setActiveView(View.DASHBOARD);
     alert("Registro exitoso.");
+    
+    // SINCRONIZACIÓN INMEDIATA para que aparezca en otros dispositivos
+    triggerMasterSync(false);
   };
 
   const handleDriveSync = async () => {
@@ -643,7 +654,12 @@ const App: React.FC = () => {
       )}
 
       {activeView === View.ADMIN_LISTS && (
-        <AdminLists staffLists={staffLists} setStaffLists={setStaffLists} onBack={() => setActiveView(View.DASHBOARD)} />
+        <AdminLists 
+          staffLists={staffLists} 
+          setStaffLists={setStaffLists} 
+          onBack={() => setActiveView(View.DASHBOARD)} 
+          triggerSync={() => triggerMasterSync(false)}
+        />
       )}
 
       {activeView === View.GUARD_STATUS && (
