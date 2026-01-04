@@ -23,7 +23,7 @@ import { AdminLists } from './components/AdminLists';
 import { EquipmentHoursView } from './components/EquipmentHoursView';
 import { AppGuide } from './components/AppGuide';
 import { generateFormalPDF, exportDetailedCSV } from './services/reportService';
-import { initDriveApi, authenticateDrive, isDriveLinked, uploadToDrive } from './services/driveService';
+import { initDriveApi, uploadToDrive, performMasterSync } from './services/driveService';
 
 const getNavalGuardRange = () => {
   const now = new Date();
@@ -91,7 +91,10 @@ const App: React.FC = () => {
     const storedRounds = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (storedRounds) setRounds(JSON.parse(storedRounds));
 
-    initDriveApi().catch(err => console.error("Error GAPI:", err));
+    initDriveApi().then(() => {
+        // Al iniciar, sincronizamos de inmediato si hay red
+        triggerMasterSync(false); 
+    }).catch(err => console.error("Error Drive Init:", err));
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(() => {
@@ -99,6 +102,57 @@ const App: React.FC = () => {
       });
     }
   }, []);
+
+  // EFECTO DE AUTO-SINCRONIZACIÓN CADA 2 MINUTOS
+  useEffect(() => {
+    const timer = setInterval(() => {
+        console.log("[Auto-Sync] Sincronizando en segundo plano...");
+        triggerMasterSync(false); // false = Silencioso, no muestra alertas
+    }, 120000); 
+
+    return () => clearInterval(timer);
+  }, [rounds, staffLists]);
+
+  const triggerMasterSync = async (showAlerts = false) => {
+    try {
+        // MIGRACIÓN: Asegurar que todas las rondas tengan UNIQUE_KEY antes de enviar
+        // Esto previene que se sobrescriban en el servidor si vienen de versiones viejas
+        const sanitizedRounds = rounds.map(r => {
+           if (r.UNIQUE_KEY) return r;
+           return {
+             ...r,
+             UNIQUE_KEY: `AUTO_${r.fecha}_${r.ronda_de_inspeccion.replace(':','')}_${r.equipo_principal}_${Math.random().toString(36).substr(2, 5)}`
+           };
+        });
+
+        const masterData = await performMasterSync(sanitizedRounds, staffLists.sg);
+        if (masterData) {
+            // Actualizamos Rondas localmente si hay cambios
+            if (masterData.rounds) {
+                setRounds(masterData.rounds);
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(masterData.rounds));
+            }
+
+            // Actualizamos Personal localmente si hay cambios
+            if (masterData.staff) {
+                const updatedStaff = { ...staffLists, sg: masterData.staff };
+                setStaffLists(updatedStaff);
+                localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updatedStaff));
+            }
+
+            if (showAlerts) {
+                const version = masterData.version || "V_ANTIGUA";
+                alert(`✅ Sincronización Exitosa (Servidor: ${version})\nDatos fusionados correctamente.`);
+            }
+            return true;
+        }
+    } catch (e) {
+        console.error("[App] Fallo en triggerMasterSync:", e);
+    }
+    
+    if (showAlerts) alert("⚠️ No se pudo completar la sincronización. Verifique que el Script de Google esté configurado correctamente.");
+    return false;
+  };
 
   const handleLogout = () => {
     if (window.confirm("¿Desea cerrar la sesión actual para realizar el cambio de usuario (Relevo)?")) {
@@ -137,13 +191,9 @@ const App: React.FC = () => {
 
   const handleDriveSync = async () => {
     if (!isDriveConnected) {
-      authenticateDrive();
-      const checkInterval = setInterval(() => {
-        if (isDriveLinked()) {
-          setIsDriveConnected(true);
-          clearInterval(checkInterval);
-        }
-      }, 1000);
+      uploadToDrive(new Blob(['test'], {type:'text/plain'}), 'test.txt', 'DEBUG').then(success => {
+          if (success) setIsDriveConnected(true);
+      });
       return;
     }
 
@@ -417,7 +467,7 @@ const App: React.FC = () => {
             <DashboardCard title="Reporte de Horas" desc="Operación Diaria" icon="⏱️" color="bg-slate-50 text-navy" onClick={() => setActiveView(View.EQUIPMENT_HOURS)} />
             <DashboardCard title="Escanear QR" desc="Identificación Rápida" icon="📷" color="bg-indigo-50 text-indigo-600" onClick={() => setActiveView(View.QR_SCAN)} />
             <DashboardCard title="Sincronizar" desc="Cloud y Exportación" icon="☁️" color="bg-emerald-50 text-emerald-600" onClick={() => setActiveView(View.SYNC)} />
-            <DashboardCard title="Tendencias" desc="IA Predictiva" icon="📈" color="bg-amber-50 text-amber-600" onClick={() => setActiveView(View.TENDENCIES)} />
+            <DashboardCard title="Tendencias" desc="Análisis Técnico" icon="📈" color="bg-amber-50 text-amber-600" onClick={() => setActiveView(View.TENDENCIES)} />
             <DashboardCard title="Manual App" desc="Guía de Operación" icon="📖" color="bg-rose-50 text-rose-600" onClick={() => setActiveView(View.APP_GUIDE)} />
             {(user?.role === UserRole.CHIEF_ENGINEER || user?.role === UserRole.CHIEF_GUARD) && (
               <DashboardCard title="Personal" desc="Administrar Usuarios" icon="👥" color="bg-slate-50 text-slate-600" onClick={() => setActiveView(View.ADMIN_LISTS)} />
@@ -460,7 +510,7 @@ const App: React.FC = () => {
                 </div>
                 <div className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${isDriveConnected ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                     <span className={`w-2 h-2 rounded-full ${isDriveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
-                    {isDriveConnected ? 'Cloud Conectado' : 'Sin Conexión'}
+                    {isDriveConnected ? 'Cloud Bridge Activo' : 'Cloud Configuración'}
                 </div>
             </div>
             
@@ -490,21 +540,34 @@ const App: React.FC = () => {
                   <button 
                     onClick={handleDriveSync}
                     disabled={syncing}
-                    className={`flex-1 flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all ${
-                        isDriveConnected 
-                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                        : 'bg-white border-2 border-blue-600 text-blue-600'
-                    }`}
+                    className={`flex-1 flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all bg-blue-600 text-white hover:bg-blue-700`}
                   >
-                    {syncing ? 'Sincronizando...' : (isDriveConnected ? 'Subir a Drive' : 'Vincular Google')}
+                    {syncing ? 'Sincronizando...' : 'Subir Reporte PDF (Drive)'}
                   </button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                 <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
-                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Exportar Base de Datos</p>
-                    <button onClick={async () => await exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Excel)</button>
+                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Respaldar Base de Datos</p>
+                    <div className="flex flex-col gap-2">
+                      <button onClick={async () => await exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Local)</button>
+                       <button 
+                        disabled={syncing}
+                        onClick={async () => {
+                          setSyncing(true);
+                          try {
+                            const success = await triggerMasterSync(true);
+                            if (!success) alert("⚠️ No se pudo conectar con el servidor para sincronizar.");
+                          } finally {
+                            setSyncing(false);
+                          }
+                        }} 
+                        className="w-full bg-blue-900 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all"
+                      >
+                        {syncing ? 'Sincronizando...' : 'Sincronizar Cloud (Pull/Push)'}
+                      </button>
+                    </div>
                 </div>
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Información de Origen</p>
