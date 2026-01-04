@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ARC Simon Bolivar</string>
+    <string name="title_activity_main">ARC Simon Bolivar</string>
+    <string name="package_name">com.arc.simonbolivar</string>
+    <string name="custom_url_scheme">com.arc.simonbolivar</string>
+</resources>

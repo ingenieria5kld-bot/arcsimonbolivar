@@ -9,11 +9,7 @@
     <meta name="theme-color" content="#003366">
     <link rel="manifest" href="manifest.json">
     <title>Rondas ARC Simón Bolívar</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Dependencies handled via npm/vite -->
     <!-- Mock process for browser environment to prevent blank screen -->
     <script>
       window.process = { env: { API_KEY: "" } };
@@ -21,30 +17,6 @@
     <!-- Google APIs -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        body { 
-          font-family: 'Inter', sans-serif;
-          overscroll-behavior-y: contain; 
-          -webkit-tap-highlight-color: transparent;
-          user-select: none; 
-        }
-        .bg-navy { background-color: #003366; }
-        .text-navy { color: #003366; }
-        button:active { transform: scale(0.98); }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    </style>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
-  }
-}
-</script>
 </head>
 <body class="bg-slate-50 text-slate-900 overflow-x-hidden">
     <div id="root"></div>

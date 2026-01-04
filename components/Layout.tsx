@@ -30,15 +30,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, u
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       {showNav && (
-        <header className="bg-[#003366] text-white shadow-lg sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <header className="bg-[#003366] text-white shadow-lg sticky top-0 z-50 pt-safe">
+          <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between pl-safe pr-safe">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1 cursor-pointer hover:scale-105 transition-transform" onClick={() => setView(View.DASHBOARD)}>
                  <span className="text-[#003366] font-bold text-xs text-center">ARC</span>
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight hidden md:block">ARC Simón Bolívar</h1>
-                <h1 className="text-lg font-bold tracking-tight md:hidden">SIMBOL</h1>
+                <h1 className="text-xl font-bold tracking-tight hidden sm:block">ARC Simón Bolívar</h1>
+                <h1 className="text-[15px] font-black tracking-tighter sm:hidden uppercase leading-none">ARC Simón Bolívar</h1>
               </div>
             </div>
             
@@ -50,7 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, u
                 <p className="text-sm font-semibold leading-none">{user?.grade} {user?.name}</p>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pr-safe">
                 <button 
                   onClick={() => setView(View.DASHBOARD)}
                   className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-md uppercase tracking-wider"
@@ -70,7 +70,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, u
         </header>
       )}
 
-      <main className="flex-1 container mx-auto px-4 py-8 max-w-5xl">
+      <main className="flex-1 container mx-auto px-4 py-8 max-w-5xl pl-safe pr-safe pb-safe">
         {children}
       </main>
 

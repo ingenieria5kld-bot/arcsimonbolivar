@@ -7,7 +7,8 @@ import {
   STAFF_LISTS_KEY, 
   LOGGED_USER_KEY, 
   EQUIPMENT_LABELS,
-  EQUIPMENT_UNITS_MAP 
+  EQUIPMENT_UNITS_MAP,
+  SPECIALTY_EQUIPMENT 
 } from './constants';
 import { 
   GeneradoresForm, PropulsoresForm, FrigorificosForm, PAAForm,
@@ -148,7 +149,7 @@ const App: React.FC = () => {
 
     setSyncing(true);
     try {
-        const pdfBlob = generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
+        const pdfBlob = await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
         if (pdfBlob) {
           const fileName = `REPORTE_${reportConfig.equipment.toUpperCase()}_GUARDIA_${reportConfig.date}.pdf`;
           const success = await uploadToDrive(pdfBlob, fileName, reportConfig.equipment);
@@ -381,7 +382,7 @@ const App: React.FC = () => {
 
       {activeView === View.DASHBOARD && (
         <div className="space-y-6 animate-in fade-in duration-500">
-          <div className="bg-navy text-white p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
+          <div className="bg-navy text-white p-8 pt-10 rounded-[2rem] shadow-2xl relative overflow-hidden pt-safe">
             <div className="relative z-10">
               <div className="flex justify-between items-start">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-2">Guardia Activa</p>
@@ -396,11 +397,19 @@ const App: React.FC = () => {
                 <span className="text-sm font-bold opacity-80">Inicio: {new Date(sessionData.guardStart).toLocaleString()}</span>
                 <span className="text-sm font-bold opacity-80 text-blue-300">División: {user?.specialty === UserSpecialty.PROPULSION ? 'MOTORISTA' : user?.specialty === UserSpecialty.ELECTRICITY ? 'ELECTRICISTA' : 'GLOBAL'}</span>
               </div>
-              <div className="mt-4">
-                 <span className="text-2xl font-black text-white">TURNO: {sessionData.ronda_de_inspeccion} HS</span>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-6">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-1">Ronda de Inspección</p>
+                  <span className="text-3xl font-black text-white leading-none">TURNO: {sessionData.ronda_de_inspeccion} HS</span>
+                </div>
+                <button 
+                  onClick={() => setActiveView(View.GENERAL_DATA)} 
+                  className="bg-white/10 hover:bg-white/20 px-6 py-2.5 rounded-xl border border-white/20 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Ajustar Turno
+                </button>
               </div>
             </div>
-            <button onClick={() => setActiveView(View.GENERAL_DATA)} className="absolute bottom-6 right-8 bg-white/10 hover:bg-white/20 px-6 py-2 rounded-xl border border-white/20 text-[10px] font-black uppercase tracking-widest">Ajustar Turno</button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -464,14 +473,16 @@ const App: React.FC = () => {
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seleccione Sistema</label>
                     <select value={reportConfig.equipment} onChange={e => setReportConfig(p => ({...p, equipment: e.target.value as EquipmentType}))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm bg-white outline-none focus:border-navy">
-                      {Object.entries(EQUIPMENT_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                      {(SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty] || Object.values(EquipmentType)).map(type => (
+                        <option key={type} value={type}>{EQUIPMENT_LABELS[type]}</option>
+                      ))}
                     </select>
                   </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
                   <button 
-                    onClick={() => generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment)} 
+                    onClick={async () => await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment)} 
                     className="flex-1 bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
                   >
                     Descargar PDF
@@ -493,7 +504,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                 <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
                     <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Exportar Base de Datos</p>
-                    <button onClick={() => exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Excel)</button>
+                    <button onClick={async () => await exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Excel)</button>
                 </div>
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Información de Origen</p>
@@ -661,7 +672,7 @@ const App: React.FC = () => {
           }
       }} onClose={() => setActiveView(View.DASHBOARD)} />}
       
-      {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds} onBack={() => setActiveView(View.DASHBOARD)} />}
+      {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds} user={user!} onBack={() => setActiveView(View.DASHBOARD)} />}
     </Layout>
   );
 };
