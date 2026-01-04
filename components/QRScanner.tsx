@@ -1,7 +1,5 @@
-
-import React, { useEffect, useRef } from 'react';
-
-declare const Html5QrcodeScanner: any;
+import React, { useEffect, useState } from 'react';
+import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 
 interface QRScannerProps {
   onScan: (result: string) => void;
@@ -9,43 +7,64 @@ interface QRScannerProps {
 }
 
 export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
-  const scannerRef = useRef<any>(null);
+  const [error, setError] = useState<string>('');
+
+  const startScan = async () => {
+    try {
+      // 1. Check permissions
+      const status = await BarcodeScanner.checkPermissions();
+
+      let granted = status.camera === 'granted';
+
+      // 2. Request if not granted
+      if (!granted) {
+        const response = await BarcodeScanner.requestPermissions();
+        granted = response.camera === 'granted';
+      }
+
+      if (!granted) {
+        setError('Permiso de cámara denegado. Por favor, habilítelo en la configuración.');
+        return;
+      }
+
+      // 3. Install module (optional but recommended for Google Barcode Scanner)
+      try {
+        await BarcodeScanner.installGoogleBarcodeScannerModule();
+      } catch (installErr: any) {
+        // Ignore if already installed
+        if (!installErr?.message?.includes('already installed')) {
+          console.warn("Module install warning:", installErr);
+        }
+      }
+
+      // 4. Start Scan (Google Code Scanner UI)
+      const result = await BarcodeScanner.scan({
+        formats: [], // All formats
+      });
+
+      if (result.barcodes.length > 0) {
+        onScan(result.barcodes[0].rawValue);
+      } else {
+        // User cancelled or no code found
+        onClose();
+      }
+
+    } catch (err: any) {
+      console.error("QR Scan Error:", err);
+      // Handle cancellation specifically if needed, otherwise show error
+      if (err?.message?.includes('canceled')) {
+        onClose();
+      } else {
+        setError('Error al iniciar el escáner: ' + (err.message || 'Desconocido'));
+      }
+    }
+  };
 
   useEffect(() => {
-    // Pequeño retardo para asegurar que el DOM está listo
-    const timer = setTimeout(() => {
-        scannerRef.current = new Html5QrcodeScanner(
-          "qr-reader",
-          { 
-            fps: 15, 
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0,
-            rememberLastUsedCamera: true
-          },
-          /* verbose= */ false
-        );
-
-        const onScanSuccess = (decodedText: string) => {
-          if (scannerRef.current) {
-            scannerRef.current.clear().then(() => {
-              onScan(decodedText);
-            }).catch((err: any) => {
-              console.error(err);
-              onScan(decodedText);
-            });
-          }
-        };
-
-        scannerRef.current.render(onScanSuccess, () => {});
-    }, 100);
-
-    return () => {
-      clearTimeout(timer);
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch((err: any) => console.error(err));
-      }
-    };
-  }, [onScan]);
+    // Launch scan immediately on mount
+    startScan();
+    // Cleanup not strictly needed for this method as it's a promise-based activity
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900/95 flex flex-col items-center justify-center p-4 backdrop-blur-md">
@@ -57,19 +76,35 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
           </div>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors text-2xl">&times;</button>
         </div>
-        <div className="bg-slate-100 p-2">
-          <div id="qr-reader" className="w-full overflow-hidden rounded-2xl"></div>
+
+        <div className="p-8 text-center min-h-[300px] flex flex-col items-center justify-center">
+          {error ? (
+            <div className="text-red-500 font-bold mb-4 px-4 py-3 bg-red-50 rounded-xl">
+              {error}
+            </div>
+          ) : (
+            <>
+              <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-4xl mb-6 animate-pulse">
+                📷
+              </div>
+              <p className="text-slate-600 font-bold uppercase text-xs tracking-widest mb-2">Abriendo cámara nativa...</p>
+              <p className="text-slate-400 text-[10px] mb-6 max-w-[200px] mx-auto">Si no abre automáticamente, usa el botón de abajo.</p>
+            </>
+          )}
+
+          <button
+            onClick={startScan}
+            className="bg-navy text-white px-8 py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-blue-900 transition-all active:scale-95"
+          >
+            {error ? 'Reintentar' : 'Activar Cámara'}
+          </button>
         </div>
-        <div className="p-8 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-3">
-            <span className="animate-pulse">●</span> Sensor Activo
-          </div>
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">
-            Apunta la cámara al código QR pegado en la unidad para cargar los parámetros técnicos.
-          </p>
+
+        <div className="bg-slate-100 p-4 text-center">
+          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Powered by Google MLKit</p>
         </div>
       </div>
-      <button onClick={onClose} className="mt-8 text-white/50 font-black uppercase text-xs tracking-[0.2em] hover:text-white transition-colors">Cerrar Escáner</button>
+      <button onClick={onClose} className="mt-8 text-white/50 font-black uppercase text-xs tracking-[0.2em] hover:text-white transition-colors">Cancelar</button>
     </div>
   );
 };
