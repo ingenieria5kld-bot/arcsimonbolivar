@@ -292,7 +292,8 @@ const App: React.FC = () => {
         onChange: (e: any) => setCurrentRound(prev => ({ ...prev, [e.target.name]: e.target.value })), 
         showHorometro,
         showTrim,
-        previousRound
+        previousRound,
+        previousTime: previousRound?.ronda_de_inspeccion
     };
 
     switch(currentRound.equipo_principal) {
@@ -305,7 +306,8 @@ const App: React.FC = () => {
       case EquipmentType.DESALINIZADORAS: return <DesalinizadorasForm {...commonProps} />;
       case EquipmentType.MANEJADORAS: return <ManejadorasForm {...commonProps} />;
       case EquipmentType.DEOILER: return <DeoilerForm {...commonProps} />;
-      case EquipmentType.BOW_THRUSTER: return <BowThrusterForm {...commonProps} />;
+      case EquipmentType.BOW_THRUSTER:
+      case EquipmentType.TIMONES: return <BowThrusterForm {...commonProps} />;
       case EquipmentType.AIRE_COMPRIMIDO: return <AireComprimidoForm {...commonProps} />;
       default: return <GenericEquipmentForm {...commonProps} type={currentRound.equipo_principal as EquipmentType} />;
     }
@@ -409,8 +411,6 @@ const App: React.FC = () => {
               <select name="role" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold" required>
                 <option value={UserRole.OPERATOR}>Operador S/G</option>
                 <option value={UserRole.SG_ENGINEERING}>S/G Ingeniería</option>
-                <option value={UserRole.CHIEF_GUARD}>Jefe de Guardia</option>
-                <option value={UserRole.CHIEF_ENGINEER}>Ingeniero Jefe</option>
               </select>
             </div>
 
@@ -499,6 +499,8 @@ const App: React.FC = () => {
           onBack={() => setActiveView(View.DASHBOARD)} 
           isReliefContext={true}
           user={user}
+          rounds={rounds}
+          guardDate={sessionData.guardStart.split('T')[0]}
           onConfirmed={() => {
             const guardDay = sessionData.guardStart.split('T')[0];
             localStorage.setItem(`hours_confirmed_${guardDay}_${user?.specialty}`, 'true');

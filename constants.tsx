@@ -20,14 +20,15 @@ export const SPECIALTY_EQUIPMENT: Record<UserSpecialty, EquipmentType[]> = {
     EquipmentType.ENGRANAJES,
     EquipmentType.PURIFICADOR,
     EquipmentType.DEOILER,
-    EquipmentType.BOW_THRUSTER
+    EquipmentType.TIMONES
   ],
   [UserSpecialty.ELECTRICITY]: [
     EquipmentType.PAA,
     EquipmentType.FRIGORIFICOS,
     EquipmentType.DESALINIZADORAS,
     EquipmentType.MANEJADORAS,
-    EquipmentType.AIRE_COMPRIMIDO
+    EquipmentType.AIRE_COMPRIMIDO,
+    EquipmentType.BOW_THRUSTER
   ],
   [UserSpecialty.ALL]: Object.values(EquipmentType)
 };
@@ -40,7 +41,8 @@ export const EQUIPMENT_LABELS: Record<string, string> = {
   [EquipmentType.PURIFICADOR]: 'Purificador',
   [EquipmentType.DEOILER]: 'Deoiler',
   [EquipmentType.MANEJADORAS]: 'Manejadoras de Aire',
-  [EquipmentType.BOW_THRUSTER]: 'Bow Thruster / Timones',
+  [EquipmentType.BOW_THRUSTER]: 'Bow Thruster',
+  [EquipmentType.TIMONES]: 'Timones (Bomba Timón)',
   [EquipmentType.ENGRANAJES]: 'Engranajes Reductores',
   [EquipmentType.DESALINIZADORAS]: 'Desalinizadoras',
   [EquipmentType.AIRE_COMPRIMIDO]: 'Compresor de Aire Comprimido'
@@ -54,7 +56,8 @@ export const EQUIPMENT_UNITS_MAP: Record<string, string[]> = {
   [EquipmentType.PURIFICADOR]: ['Unidad Única'],
   [EquipmentType.DEOILER]: ['Deoiler Principal'],
   [EquipmentType.MANEJADORAS]: ['Manejadora #1', 'Manejadora #2', 'Manejadora #3', 'Manejadora #4', 'Cassete'],
-  [EquipmentType.BOW_THRUSTER]: ['Bow Thruster 1', 'Bow Thruster 2', 'Bomba Timón 1', 'Bomba Timón 2'],
+  [EquipmentType.BOW_THRUSTER]: ['Bow Thruster 1', 'Bow Thruster 2'],
+  [EquipmentType.TIMONES]: ['Bomba Timón 1', 'Bomba Timón 2'],
   [EquipmentType.ENGRANAJES]: ['Babor', 'Estribor'],
   [EquipmentType.DESALINIZADORAS]: ['Proa', 'Popa'],
   [EquipmentType.AIRE_COMPRIMIDO]: ['Compresor #1', 'Compresor #2'],

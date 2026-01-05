@@ -84,5 +84,6 @@ export enum EquipmentType {
   BOW_THRUSTER = 'bow_thruster',
   ENGRANAJES = 'engranajes',
   DESALINIZADORAS = 'desalinizadoras',
-  AIRE_COMPRIMIDO = 'aire_comprimido'
+  AIRE_COMPRIMIDO = 'aire_comprimido',
+  TIMONES = 'timones'
 }

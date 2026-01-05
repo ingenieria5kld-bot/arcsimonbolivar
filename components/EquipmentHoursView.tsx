@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { UserSpecialty, UserSG, UserRole } from '../types';
+import { UserSpecialty, UserSG, UserRole, RoundData, EquipmentType } from '../types';
 
 interface EquipmentHourRow {
   id: string;
@@ -17,9 +17,11 @@ interface EquipmentHoursViewProps {
   isReliefContext?: boolean; 
   onConfirmed?: () => void;   
   user: UserSG | null;
+  rounds: RoundData[];
+  guardDate: string;
 }
 
-export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, isReliefContext, onConfirmed, user }) => {
+export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, isReliefContext, onConfirmed, user, rounds, guardDate }) => {
   const STORAGE_KEY = 'equipment_hours_state_v3';
   const userSpecialty = user?.specialty || UserSpecialty.PROPULSION;
   const isHighRank = user?.role === UserRole.CHIEF_ENGINEER || user?.role === UserRole.CHIEF_GUARD;
@@ -51,11 +53,40 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
       { id: 'dp', name: 'DESALINIZADORA PROA', horasAnt: 2000, horasAct: 2024, horasDia: 24, isWorkedEditable: false, specialty: UserSpecialty.ELECTRICITY },
       { id: 'do', name: 'DESALINIZADORA POPA', horasAnt: 2478, horasAct: 2502, horasDia: 24, isWorkedEditable: false, specialty: UserSpecialty.ELECTRICITY },
       { id: 'de', name: 'DEOILER', horasAnt: 0, horasAct: 0, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.PROPULSION },
-      { id: 'bt1', name: 'BOMBA 1 BOW THRUSTER', horasAnt: 553, horasAct: 553, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.PROPULSION },
-      { id: 'bt2', name: 'BOMBA 2 BOW THRUSTER', horasAnt: 547, horasAct: 547, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.PROPULSION },
+      { id: 'bt1', name: 'BOMBA 1 BOW THRUSTER', horasAnt: 553, horasAct: 553, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.ELECTRICITY },
+      { id: 'bt2', name: 'BOMBA 2 BOW THRUSTER', horasAnt: 547, horasAct: 547, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.ELECTRICITY },
       { id: 'bt1t', name: 'BOMBA DE TIMÓN #1', horasAnt: 5108, horasAct: 5108, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.PROPULSION },
       { id: 'bt2t', name: 'BOMBA DE TIMÓN #2', horasAnt: 2240, horasAct: 2240, horasDia: 0, isWorkedEditable: false, specialty: UserSpecialty.PROPULSION },
     ]
+  };
+
+  const EQUIPMENT_DATA_MAP: Record<string, { type: EquipmentType, unit: string }> = {
+    mp1: { type: EquipmentType.PROPULSORES, unit: 'Propulsor 1 (Babor)' },
+    mp2: { type: EquipmentType.PROPULSORES, unit: 'Propulsor 2 (Estribor)' },
+    cr1: { type: EquipmentType.ENGRANAJES, unit: 'Babor' },
+    cr2: { type: EquipmentType.ENGRANAJES, unit: 'Estribor' },
+    mg1: { type: EquipmentType.GENERADORES, unit: 'Generador 1 (Babor)' },
+    mg2: { type: EquipmentType.GENERADORES, unit: 'Generador 2 (Centro)' },
+    mg3: { type: EquipmentType.GENERADORES, unit: 'Generador 3 (Estribor)' },
+    paa1: { type: EquipmentType.PAA, unit: 'Compresor #1' },
+    paa2: { type: EquipmentType.PAA, unit: 'Compresor #2' },
+    pf1: { type: EquipmentType.FRIGORIFICOS, unit: 'Compresor #1' },
+    pf2: { type: EquipmentType.FRIGORIFICOS, unit: 'Compresor #2' },
+    ac1: { type: EquipmentType.AIRE_COMPRIMIDO, unit: 'Compresor #1' },
+    ac2: { type: EquipmentType.AIRE_COMPRIMIDO, unit: 'Compresor #2' },
+    pur: { type: EquipmentType.PURIFICADOR, unit: 'Unidad Única' },
+    m1: { type: EquipmentType.MANEJADORAS, unit: 'Manejadora #1' },
+    m2: { type: EquipmentType.MANEJADORAS, unit: 'Manejadora #2' },
+    m3: { type: EquipmentType.MANEJADORAS, unit: 'Manejadora #3' },
+    m4: { type: EquipmentType.MANEJADORAS, unit: 'Manejadora #4' },
+    mc: { type: EquipmentType.MANEJADORAS, unit: 'Cassete' },
+    dp: { type: EquipmentType.DESALINIZADORAS, unit: 'Proa' },
+    do: { type: EquipmentType.DESALINIZADORAS, unit: 'Popa' },
+    de: { type: EquipmentType.DEOILER, unit: 'Deoiler Principal' },
+    bt1: { type: EquipmentType.BOW_THRUSTER, unit: 'Bow Thruster 1' },
+    bt2: { type: EquipmentType.BOW_THRUSTER, unit: 'Bow Thruster 2' },
+    bt1t: { type: EquipmentType.TIMONES, unit: 'Bomba Timón 1' },
+    bt2t: { type: EquipmentType.TIMONES, unit: 'Bomba Timón 2' },
   };
 
   const [data, setData] = useState(INITIAL_DATA);
@@ -63,10 +94,70 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
+    let currentData = INITIAL_DATA;
+
     if (saved) {
-      setData(JSON.parse(saved));
+      currentData = JSON.parse(saved);
+      // Sincronizar especialidades por si cambiaron en el código
+      ['main', 'aux'].forEach((section) => {
+        (currentData as any)[section] = (currentData as any)[section].map((row: any) => {
+          const initialRow = (INITIAL_DATA as any)[section].find((r: any) => r.id === row.id);
+          if (initialRow) {
+            return { ...row, specialty: initialRow.specialty };
+          }
+          return row;
+        });
+      });
     }
-  }, []);
+
+    // SINCRONIZACIÓN CON RONDAS REALES
+    const syncWithRounds = (dataObj: typeof INITIAL_DATA) => {
+      const updated = { ...dataObj };
+
+      // Calcular fecha del día siguiente para la ronda de las 08:00
+      const d = new Date(guardDate + 'T12:00:00');
+      d.setDate(d.getDate() + 1);
+      const nextDay = d.toISOString().split('T')[0];
+
+      ['main', 'aux'].forEach((section) => {
+        updated[section as 'main' | 'aux'] = updated[section as 'main' | 'aux'].map(row => {
+          const mapping = EQUIPMENT_DATA_MAP[row.id];
+          if (!mapping) return row;
+
+          // Buscar Horómetro Anterior (09:00 AM del día de inicio de guardia)
+          const roundAnt = rounds.find(r => 
+            r.fecha === guardDate && 
+            r.ronda_de_inspeccion === '09:00' && 
+            r.equipo_principal === mapping.type && 
+            r.UNIDAD_ACTIVA === mapping.unit
+          );
+
+          // Buscar Horómetro Actual (08:00 AM del día siguiente / Fin de guardia)
+          const roundAct = rounds.find(r => 
+            (r.fecha === nextDay || r.fecha === guardDate) && // Algunos pueden loguear 08:00 con fecha del día anterior
+            r.ronda_de_inspeccion === '08:00' && 
+            r.equipo_principal === mapping.type && 
+            r.UNIDAD_ACTIVA === mapping.unit
+          );
+
+          const hAct = roundAct ? parseFloat(roundAct.horometro as any) : row.horasAct;
+          const hAnt = roundAnt ? parseFloat(roundAnt.horometro as any) : row.horasAnt;
+
+          return {
+            ...row,
+            horasAct: isNaN(hAct) ? row.horasAct : hAct,
+            horasAnt: isNaN(hAnt) ? row.horasAnt : hAnt,
+            horasDia: !isNaN(hAct) && !isNaN(hAnt) ? Math.max(0, hAct - hAnt) : row.horasDia
+          };
+        });
+      });
+      return updated;
+    };
+
+    const syncedData = syncWithRounds(currentData);
+    setData(syncedData);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(syncedData));
+  }, [rounds, guardDate]);
 
   const handleUpdate = (section: 'main' | 'aux', id: string, field: 'horasDia' | 'horasAct' | 'horasAnt', value: string) => {
     const numValue = parseFloat(value) || 0;
