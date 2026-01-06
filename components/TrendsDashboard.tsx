@@ -6,13 +6,19 @@ import Chart from 'chart.js/auto';
 interface TrendsDashboardProps {
   rounds: RoundData[];
   user: UserSG;
+  condicion: string;
   onBack: () => void;
 }
 
-export const TrendsDashboard: React.FC<TrendsDashboardProps> = ({ rounds, user, onBack }) => {
+export const TrendsDashboard: React.FC<TrendsDashboardProps> = ({ rounds, user, condicion, onBack }) => {
   const [viewMode, setViewMode] = useState<'simple' | 'multi' | 'presets'>('simple');
   
-  const allowedEquip = SPECIALTY_EQUIPMENT[user.specialty as UserSpecialty] || Object.values(EquipmentType);
+  // Si estamos en Puerto/Astillero, o si el usuario no tiene especialidad definida, mostramos todo.
+  const isGlobalCond = ["Puerto", "Astillero"].some(c => condicion.includes(c));
+  
+  const allowedEquip = (isGlobalCond || !SPECIALTY_EQUIPMENT[user.specialty as UserSpecialty]) 
+    ? Object.values(EquipmentType) 
+    : SPECIALTY_EQUIPMENT[user.specialty as UserSpecialty];
   const [selectedEquipment, setSelectedEquipment] = useState<EquipmentType>(allowedEquip[0]);
   const [availableParams, setAvailableParams] = useState<string[]>([]);
   const [selectedParams, setSelectedParams] = useState<string[]>([]);

@@ -42,9 +42,9 @@ const saveAndShareFile = async (blob: Blob, fileName: string) => {
       if (canShare.value) {
         await Share.share({
           title: 'Compartir Reporte',
-          text: 'Reporte generado desde la App ARC Simón Bolívar',
+          text: `Reporte generado: ${fileName}`,
           url: savedFile.uri,
-          dialogTitle: 'Enviar archivo...',
+          dialogTitle: `Guardar/Enviar ${fileName}`,
         });
       } else {
         alert("El sistema no permite compartir archivos directamente.");
@@ -216,207 +216,276 @@ const PARAM_CONFIG: Record<string, { label: string, unit: string }> = {
   amperaje_ac: { label: "AMP", unit: "A" }
 };
 
-export const generateFormalPDF = async (rounds: RoundData[], date: string, equipmentType: EquipmentType | string, shouldDownload = true): Promise<any> => {
-  try {
-    alert("Generando reporte PDF...");
-    
+import JSZip from 'jszip';
+
+// Helper interno para generar un solo PDF y retornarlo (blob) sin guardar si se solicita
+const createAndSavePDF = async (rounds: RoundData[], date: string, equipmentType: string, shouldDownload: boolean) => {
+    // ... (Keep existing generation logic)
     const doc = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
       format: 'a4'
     });
 
-  const LITERS_TO_GALLONS = 0.264172;
-  
-  const d = new Date(date + 'T12:00:00');
-  const dNext = new Date(d);
-  dNext.setDate(dNext.getDate() + 1);
-  const nextDateLabel = dNext.toISOString().split('T')[0];
-
-  const equipmentRounds = rounds.filter(r => 
-    r.equipo_principal === equipmentType && r.fecha === date
-  );
-
-  const equipmentLabel = EQUIPMENT_LABELS[equipmentType] || equipmentType;
-  const uniqueUnits = Array.from(new Set(equipmentRounds.map(r => r.UNIDAD_ACTIVA)));
-
-  if (uniqueUnits.length === 0) {
-    alert(`No se encontraron registros para el equipo "${equipmentLabel}" en la guardia que inició el ${date}. Verifique la fecha.`);
-    return;
-  }
-
-  const drawPageHeader = () => {
-    doc.setDrawColor(80);
-    doc.setLineWidth(0.4);
-    doc.rect(10, 10, 277, 25);
-    doc.line(75, 10, 75, 35);
-    doc.line(210, 10, 210, 35);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text("FORMATO", 15, 15);
-    doc.setFontSize(10);
-    doc.text("REGISTRO DE OPERACIÓN Y", 15, 22);
-    doc.text("PARÁMETROS TÉCNICOS", 15, 27);
-    doc.setFontSize(7);
-    doc.text("A4-FOR-044 v3", 15, 32);
-    doc.setFontSize(11);
-    doc.text("ARMADA DE COLOMBIA", 142, 18, { align: "center" });
-    doc.setFontSize(9);
-    doc.text("ARC SIMÓN BOLÍVAR - DEPARTAMENTO DE INGENIERÍA", 142, 24, { align: "center" });
-    doc.setFontSize(8);
-    doc.text("UNIDAD: ARC SIMON BOLIVAR", 215, 18);
-    doc.text(`GUARDIA: ${date} AL ${nextDateLabel}`, 215, 26);
-    doc.text(`SISTEMA: ${equipmentLabel.toUpperCase()}`, 215, 32);
-  };
-
-  const drawPageFooter = (pageNumber: number, totalPages: number) => {
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Página ${pageNumber} de ${totalPages}`, 277, 200, { align: 'right' });
-  };
-
-  const totalPagesCount = uniqueUnits.length;
-
-  uniqueUnits.forEach((unitName, index) => {
-    if (index > 0) doc.addPage();
-    drawPageHeader();
+    const LITERS_TO_GALLONS = 0.264172;
     
-    let currentY = 40;
-    const unitRounds = equipmentRounds.filter(r => r.UNIDAD_ACTIVA === unitName);
-    
-    doc.setFillColor(230, 235, 245);
-    doc.rect(10, currentY, 277, 7, 'F');
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(0, 51, 102);
-    doc.text(`DETALLE OPERATIVO - UNIDAD: ${unitName.toUpperCase()}`, 15, currentY + 5);
-    doc.setTextColor(0);
-    currentY += 10;
+    const d = new Date(date + 'T12:00:00');
+    const dNext = new Date(d);
+    dNext.setDate(dNext.getDate() + 1);
+    const nextDateLabel = dNext.toISOString().split('T')[0];
 
-    const metadataKeys = ['UNIQUE_KEY', 'TIMESTAMP_GUARDADO', 'fecha', 'ronda_de_inspeccion', 'on_off', 'condicion', 'sg', 'equipo_principal', 'EQUIPO_ACTIVO', 'UNIDAD_ACTIVA', 'signature', 'observaciones', 'horometro', 'trim'];
-    const techKeys = Array.from(new Set(unitRounds.flatMap(r => Object.keys(r))))
-      .filter(key => !metadataKeys.includes(key))
-      .sort((a,b) => {
-         const labelA = PARAM_CONFIG[a]?.label || a;
-         const labelB = PARAM_CONFIG[b]?.label || b;
-         return labelA.localeCompare(labelB);
-      });
+    // Filter rounds for this specific equipment and date
+    const equipmentRounds = rounds.filter(r => 
+        r.equipo_principal === equipmentType && r.fecha === date
+    );
 
-    const headerRow1 = [
-      { content: 'HORA', rowSpan: 2, styles: { halign: 'center' as any, valign: 'middle' as any } },
-      { content: `PARÁMETROS TÉCNICOS`, colSpan: techKeys.length, styles: { halign: 'center' as any } },
-      { content: 'FIRMA S/G', rowSpan: 2, styles: { halign: 'center' as any, valign: 'middle' as any } }
-    ];
+    if (equipmentRounds.length === 0) return null; // No data
 
-    const headerRow2 = techKeys.map(key => ({
-      content: `${PARAM_CONFIG[key]?.label || key}\n(${PARAM_CONFIG[key]?.unit || '-'})`,
-      styles: { halign: 'center' as any, fontSize: 4.5 }
-    }));
+    const equipmentLabel = EQUIPMENT_LABELS[equipmentType as EquipmentType] || equipmentType;
+    const uniqueUnits = Array.from(new Set(equipmentRounds.map(r => r.UNIDAD_ACTIVA))).sort();
 
-    const tableData = ROUND_TIMES.map(hour => {
-      const roundAtHour = unitRounds.find(r => r.ronda_de_inspeccion === hour);
-      if (!roundAtHour) return [hour, ...techKeys.map(() => '-'), ''];
-      return [
-        hour,
-        ...techKeys.map(key => roundAtHour[key] !== undefined ? roundAtHour[key] : '-'),
-        roundAtHour.sg
-      ];
+    const drawPageHeader = () => {
+        doc.setDrawColor(80);
+        doc.setLineWidth(0.4);
+        doc.rect(10, 10, 277, 25);
+        doc.line(75, 10, 75, 35);
+        doc.line(210, 10, 210, 35);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.text("FORMATO", 15, 15);
+        doc.setFontSize(10);
+        doc.text("REGISTRO DE OPERACIÓN Y", 15, 22);
+        doc.text("PARÁMETROS TÉCNICOS", 15, 27);
+        doc.setFontSize(7);
+        doc.text("A4-FOR-044 v3", 15, 32);
+        doc.setFontSize(11);
+        doc.text("ARMADA DE COLOMBIA", 142, 18, { align: "center" });
+        doc.setFontSize(9);
+        doc.text("ARC SIMÓN BOLÍVAR - DEPARTAMENTO DE INGENIERÍA", 142, 24, { align: "center" });
+        doc.setFontSize(8);
+        doc.text("UNIDAD: ARC SIMON BOLIVAR", 215, 18);
+        doc.text(`GUARDIA: ${date} AL ${nextDateLabel}`, 215, 26);
+        doc.text(`SISTEMA: ${equipmentLabel.toUpperCase()}`, 215, 32);
+    };
+
+    const drawPageFooter = (pageNumber: number, totalPages: number) => {
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Página ${pageNumber} de ${totalPages}`, 277, 200, { align: 'right' });
+    };
+
+    const totalPagesCount = uniqueUnits.length;
+
+    uniqueUnits.forEach((unitName, index) => {
+        if (index > 0) doc.addPage();
+        drawPageHeader();
+        
+        let currentY = 40;
+        const unitRounds = equipmentRounds.filter(r => r.UNIDAD_ACTIVA === unitName);
+        
+        doc.setFillColor(230, 235, 245);
+        doc.rect(10, currentY, 277, 7, 'F');
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 51, 102);
+        doc.text(`DETALLE OPERATIVO - UNIDAD: ${unitName.toUpperCase()}`, 15, currentY + 5);
+        doc.setTextColor(0);
+        currentY += 10;
+
+        // --- FILTERING OUT TECHNICAL COLUMNS ---
+        const metadataKeys = [
+            'UNIQUE_KEY', 'TIMESTAMP_GUARDADO', 'fecha', 'ronda_de_inspeccion', 
+            'on_off', 'condicion', 'sg', 'equipo_principal', 'EQUIPO_ACTIVO', 
+            'UNIDAD_ACTIVA', 'signature', 'observaciones', 'horometro', 'trim',
+            'isDeleted', 'lastUpdated', 'audit_trail', 'version' // Excluded
+        ];
+
+        const techKeys = Array.from(new Set(unitRounds.flatMap(r => Object.keys(r))))
+        .filter(key => !metadataKeys.includes(key))
+        .sort((a,b) => {
+            const labelA = PARAM_CONFIG[a]?.label || a;
+            const labelB = PARAM_CONFIG[b]?.label || b;
+            return labelA.localeCompare(labelB);
+        });
+
+        const headerRow1 = [
+        { content: 'HORA', rowSpan: 2, styles: { halign: 'center' as any, valign: 'middle' as any } },
+        { content: `PARÁMETROS TÉCNICOS`, colSpan: techKeys.length, styles: { halign: 'center' as any } },
+        { content: 'FIRMA S/G', rowSpan: 2, styles: { halign: 'center' as any, valign: 'middle' as any } }
+        ];
+
+        const headerRow2 = techKeys.map(key => ({
+        content: `${PARAM_CONFIG[key]?.label || key}\n(${PARAM_CONFIG[key]?.unit || '-'})`,
+        styles: { halign: 'center' as any, fontSize: 4.5 }
+        }));
+
+        const tableData = ROUND_TIMES.map(hour => {
+        const roundAtHour = unitRounds.find(r => r.ronda_de_inspeccion === hour);
+        if (!roundAtHour) return [hour, ...techKeys.map(() => '-'), ''];
+        return [
+            hour,
+            ...techKeys.map(key => roundAtHour[key] !== undefined ? roundAtHour[key] : '-'),
+            roundAtHour.sg
+        ];
+        });
+
+        autoTable(doc, {
+        startY: currentY,
+        head: [headerRow1, headerRow2],
+        body: tableData,
+        theme: 'grid',
+        styles: { fontSize: 5.5, cellPadding: 0.6, textColor: 20 },
+        headStyles: { fillColor: [0, 51, 102], textColor: 255, fontSize: 4.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 10 } },
+        margin: { left: 10, right: 10 }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 10;
+
+        // --- SUMMARY ---
+        doc.setDrawColor(0, 51, 102);
+        doc.setFillColor(245, 247, 250);
+        const summaryBoxHeight = 25;
+        
+        doc.rect(10, currentY, 277, summaryBoxHeight, 'F');
+        doc.rect(10, currentY, 277, summaryBoxHeight);
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.text(`CIERRE OPERATIVO DE GUARDIA (${date} 09:00 - ${nextDateLabel} 08:00)`, 15, currentY + 6);
+
+        const round09 = unitRounds.find(r => r.ronda_de_inspeccion === "09:00");
+        const round08 = unitRounds.find(r => r.ronda_de_inspeccion === "08:00");
+        
+        const hIni = round09?.horometro || "N/R";
+        const hFin = round08?.horometro || "N/R";
+        
+        let extraInfo = "";
+        if (equipmentType === EquipmentType.GENERADORES || equipmentType === EquipmentType.PROPULSORES) {
+        if (round08?.trim !== undefined && round09?.trim !== undefined) {
+            const diffLiters = Math.abs(Number(round08.trim) - Number(round09.trim));
+            const gallons = diffLiters * LITERS_TO_GALLONS;
+            extraInfo = `| Consumo: ${gallons.toFixed(1)} Gal.`;
+        }
+        }
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.text(`H. Inicial (09:00): ${hIni} Hrs`, 15, currentY + 12);
+        doc.text(`H. Final (08:00): ${hFin} Hrs ${extraInfo}`, 15, currentY + 18);
+
+        currentY += summaryBoxHeight + 5;
+        doc.setFontSize(8.5);
+        doc.setFont("helvetica", "bold");
+        doc.text("OBSERVACIONES TÉCNICAS Y NOVEDADES REPORTADAS:", 10, currentY);
+        
+        const unitObs = unitRounds
+        .filter(r => r.observaciones)
+        .map(r => `[${r.ronda_de_inspeccion}]: ${r.observaciones}`)
+        .join(" | ");
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        const splitObs = doc.splitTextToSize(unitObs || "Sin novedades reportadas para esta unidad durante la guardia.", 270);
+        doc.text(splitObs, 10, currentY + 5);
+
+        // --- SIGNATURES ---
+        const signY = 185;
+        doc.setDrawColor(180);
+        doc.setLineWidth(0.2);
+        
+        doc.line(20, signY, 90, signY);       // Suboficial
+        doc.line(113.5, signY, 183.5, signY); // Oficial
+        doc.line(207, signY, 277, signY);     // Jefe
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        
+        doc.text("SUBOFICIAL DE GUARDIA INGENIERÍA", 55, signY + 5, { align: "center" });
+        doc.text("OFICIAL DE GUARDIA INGENIERÍA", 148.5, signY + 5, { align: "center" });
+        doc.text("JEFE DEPARTAMENTO DE INGENIERÍA", 242, signY + 5, { align: "center" });
+
+        drawPageFooter(index + 1, totalPagesCount);
     });
 
-    autoTable(doc, {
-      startY: currentY,
-      head: [headerRow1, headerRow2],
-      body: tableData,
-      theme: 'grid',
-      styles: { fontSize: 5.5, cellPadding: 0.6, textColor: 20 },
-      headStyles: { fillColor: [0, 51, 102], textColor: 255, fontSize: 4.5 },
-      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 10 } },
-      margin: { left: 10, right: 10 }
-    });
+    const fileName = `REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`;
+    const blob = doc.output('blob');
 
-    currentY = (doc as any).lastAutoTable.finalY + 10;
+    if (shouldDownload) {
+        await saveAndShareFile(blob, fileName);
+    }
+    return blob;
+};
 
-    // --- BLOQUE DE CIERRE OPERATIVO Y OBSERVACIONES (BAJO CADA EQUIPO) ---
-    doc.setDrawColor(0, 51, 102);
-    doc.setFillColor(245, 247, 250);
-    const summaryBoxHeight = 25;
-    
-    // Si no cabe en la página actual, podrías agregar lógica de salto, pero en landscape suele haber espacio.
-    doc.rect(10, currentY, 277, summaryBoxHeight, 'F');
-    doc.rect(10, currentY, 277, summaryBoxHeight);
-    
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text(`CIERRE OPERATIVO DE GUARDIA (${date} 09:00 - ${nextDateLabel} 08:00)`, 15, currentY + 6);
+export const generateFormalPDF = async (rounds: RoundData[], date: string, equipmentType: EquipmentType | string | string[], shouldDownload = true): Promise<any> => {
+  try {
+    alert("Iniciando generación de reportes...");
 
-    const round09 = unitRounds.find(r => r.ronda_de_inspeccion === "09:00");
-    const round08 = unitRounds.find(r => r.ronda_de_inspeccion === "08:00");
+    let typesToProcess: string[] = [];
     
-    const hIni = round09?.horometro || "N/R";
-    const hFin = round08?.horometro || "N/R";
-    
-    let extraInfo = "";
-    if (equipmentType === EquipmentType.GENERADORES || equipmentType === EquipmentType.PROPULSORES) {
-      if (round08?.trim !== undefined && round09?.trim !== undefined) {
-        // FIX: Removed parseFloat since trim is defined as a number in RoundData
-        const diffLiters = Math.abs(round08.trim - round09.trim);
-        const gallons = diffLiters * LITERS_TO_GALLONS;
-        extraInfo = `| Consumo: ${gallons.toFixed(1)} Gal.`;
-      }
+    if (Array.isArray(equipmentType)) {
+        typesToProcess = equipmentType;
+    } else if (equipmentType === 'ALL') {
+         // Get all types that actually have data
+         const availableTypes = new Set(rounds.map(r => r.equipo_principal));
+         typesToProcess = Array.from(availableTypes).sort();
+    } else {
+         typesToProcess = [equipmentType as string];
     }
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.text(`H. Inicial (09:00): ${hIni} Hrs`, 15, currentY + 12);
-    doc.text(`H. Final (08:00): ${hFin} Hrs ${extraInfo}`, 15, currentY + 18);
-
-    currentY += summaryBoxHeight + 5;
-    doc.setFontSize(8.5);
-    doc.setFont("helvetica", "bold");
-    doc.text("OBSERVACIONES TÉCNICAS Y NOVEDADES REPORTADAS:", 10, currentY);
-    
-    const unitObs = unitRounds
-      .filter(r => r.observaciones)
-      .map(r => `[${r.ronda_de_inspeccion}]: ${r.observaciones}`)
-      .join(" | ");
-    
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    const splitObs = doc.splitTextToSize(unitObs || "Sin novedades reportadas para esta unidad durante la guardia.", 270);
-    doc.text(splitObs, 10, currentY + 5);
-
-    // --- SECCIÓN DE FIRMAS (SOLO AL FINAL DEL DOCUMENTO) ---
-    const isLastPage = index === uniqueUnits.length - 1;
-    if (isLastPage) {
-      const signY = 185;
-      doc.setDrawColor(180);
-      doc.setLineWidth(0.2);
-      
-      // Líneas de firma
-      doc.line(20, signY, 90, signY);       // Suboficial
-      doc.line(113.5, signY, 183.5, signY); // Oficial
-      doc.line(207, signY, 277, signY);     // Jefe
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      
-      // Etiquetas de firma
-      doc.text("SUBOFICIAL DE GUARDIA INGENIERÍA", 55, signY + 5, { align: "center" });
-      doc.text("OFICIAL DE GUARDIA INGENIERÍA", 148.5, signY + 5, { align: "center" });
-      doc.text("JEFE DEPARTAMENTO DE INGENIERÍA", 242, signY + 5, { align: "center" });
+    if (typesToProcess.length === 0) {
+        alert("No hay datos para generar reporte.");
+        return;
     }
 
-    drawPageFooter(index + 1, totalPagesCount);
-  });
+    // Process each type sequentially
+    const generatedBlobs: Blob[] = [];
+    const generatedFiles: { name: string, blob: Blob }[] = [];
 
-  const fileName = `REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`;
-  
-  const blob = doc.output('blob');
+    // NOTE: If more than 1 file is generated, we switch to Batch mode (ZIP)
+    const isBatchMode = typesToProcess.length > 1;
 
-  if (shouldDownload) {
-    await saveAndShareFile(blob, fileName);
-  }
-  return blob;
+    for (const type of typesToProcess) {
+        // Only trigger individual download if NOT in batch mode AND shouldDownload is true
+        const individualDownload = !isBatchMode && shouldDownload;
+        const blob = await createAndSavePDF(rounds, date, type, individualDownload);
+        
+        if (blob) {
+            generatedBlobs.push(blob);
+            generatedFiles.push({
+                name: `REPORTE_${type.toUpperCase()}_GUARDIA_${date}.pdf`,
+                blob: blob
+            });
+        }
+        
+        // Small delay to ensure UI responsiveness or share dialog handling if needed
+        await new Promise(resolve => setTimeout(resolve, isBatchMode ? 50 : 800));
+    }
+
+    if (isBatchMode && generatedFiles.length > 0 && shouldDownload) {
+        // Zip implementation
+        try {
+            alert("Empaquetando reportes en archivo ZIP...");
+            const zip = new JSZip();
+            generatedFiles.forEach(file => {
+                zip.file(file.name, file.blob);
+            });
+            
+            const zipContent = await zip.generateAsync({ type: 'blob' });
+            const zipName = `REPORTES_GUARDIA_INGENIERIA_${date}.zip`;
+            
+            await saveAndShareFile(zipContent, zipName);
+
+        } catch (zipError) {
+            console.error("Error zipping:", zipError);
+            alert("Error al comprimir archivos. Se intentarán descargar individualmente.");
+            // Fallback: download individually? No, users asked not to prompt multiple times.
+        }
+    }
+    
+    alert("Proceso finalizado. Revise las descargas/compartir.");
+    return generatedBlobs.length === 1 ? generatedBlobs[0] : generatedBlobs;
+
   } catch (error: any) {
     console.error('Error en generateFormalPDF:', error);
     alert(`Error constructivo PDF: ${error.message || JSON.stringify(error)}`);

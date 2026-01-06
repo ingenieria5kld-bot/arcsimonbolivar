@@ -78,6 +78,7 @@ const App: React.FC = () => {
   });
 
   const [currentRound, setCurrentRound] = useState<Partial<RoundData>>({ on_off: 'y' });
+  const [selectedExportTypes, setSelectedExportTypes] = useState<string[]>([]);
 
   useEffect(() => {
     setCurrentOrigin(window.location.origin);
@@ -327,12 +328,24 @@ const App: React.FC = () => {
       return;
     }
 
+    if (selectedExportTypes.length === 0) {
+        alert("Por favor seleccione un sistema para subir a Drive.");
+        return;
+    }
+
+    if (selectedExportTypes.length > 1) {
+        alert("La carga a Drive solo admite un archivo a la vez. Por favor seleccione UN solo sistema.");
+        return;
+    }
+
+    const typeToSync = selectedExportTypes[0];
+
     setSyncing(true);
     try {
-        const pdfBlob = await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
-        if (pdfBlob) {
-          const fileName = `REPORTE_${reportConfig.equipment.toUpperCase()}_GUARDIA_${reportConfig.date}.pdf`;
-          const success = await uploadToDrive(pdfBlob, fileName, reportConfig.equipment);
+        const pdfBlob = await generateFormalPDF(rounds, reportConfig.date, typeToSync, false);
+        if (pdfBlob && !(Array.isArray(pdfBlob))) {
+          const fileName = `REPORTE_${typeToSync.toUpperCase()}_GUARDIA_${reportConfig.date}.pdf`;
+          const success = await uploadToDrive(pdfBlob as Blob, fileName, typeToSync);
           if (success) alert("Reporte sincronizado con Drive.");
           else alert("Error al subir archivo. Reintente.");
         }
@@ -489,7 +502,7 @@ const App: React.FC = () => {
             const gradeName = formData.get('gradeName') as string;
             const password = formData.get('password') as string;
             
-            if (gradeName === "ADMIN 1" && password === "123") {
+            if (gradeName === "ADMIN 1" && password === "arcadmin_1") {
                 const adminUser: UserSG = { grade: 'ADMIN', name: '1', role: UserRole.CHIEF_ENGINEER, specialty: UserSpecialty.ALL };
                 setUser(adminUser);
                 localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(adminUser));
@@ -685,21 +698,94 @@ const App: React.FC = () => {
                     <input type="date" value={reportConfig.date} onChange={e => setReportConfig(p => ({...p, date: e.target.value}))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm outline-none focus:border-navy" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seleccione Sistema</label>
-                    <select value={reportConfig.equipment} onChange={e => setReportConfig(p => ({...p, equipment: e.target.value as EquipmentType}))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm bg-white outline-none focus:border-navy">
-                      {(SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty] || Object.values(EquipmentType)).map(type => (
-                        <option key={type} value={type}>{EQUIPMENT_LABELS[type]}</option>
-                      ))}
-                    </select>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seleccione Sistemas</label>
+                    <div className="w-full border-2 border-white rounded-xl bg-white shadow-sm overflow-hidden flex flex-col max-h-60">
+                      
+                      {/* Select All / Deselect All Header */}
+                      <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex justify-between items-center">
+                         <span className="text-[9px] font-black text-slate-400 uppercase">Equipos Disponibles</span>
+                         <button 
+                           onClick={() => {
+                             const isGlobalMode = ["Puerto", "Astillero"].some(c => sessionData.condicion.includes(c));
+                             const availableTypes = (isGlobalMode || !SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty]) 
+                                ? Object.values(EquipmentType) 
+                                : SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty];
+
+                             if (selectedExportTypes.length === availableTypes.length) {
+                               setSelectedExportTypes([]);
+                             } else {
+                               setSelectedExportTypes(availableTypes);
+                             }
+                           }}
+                           className="text-[9px] font-bold text-blue-600 hover:text-blue-800"
+                         >
+                           {(() => {
+                              const isGlobalMode = ["Puerto", "Astillero"].some(c => sessionData.condicion.includes(c));
+                              const availableTypes = (isGlobalMode || !SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty]) 
+                                ? Object.values(EquipmentType) 
+                                : SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty];
+                              return selectedExportTypes.length === availableTypes.length ? 'Deseleccionar' : 'Seleccionar Todos';
+                           })()}
+                         </button>
+                      </div>
+
+                       {/* List */}
+                       <div className="overflow-y-auto p-2 space-y-1">
+                          {(() => {
+                              const isGlobalMode = ["Puerto", "Astillero"].some(c => sessionData.condicion.includes(c));
+                              const availableTypes = (isGlobalMode || !SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty]) 
+                                ? Object.values(EquipmentType) 
+                                : SPECIALTY_EQUIPMENT[user?.specialty as UserSpecialty];
+                              
+                              return availableTypes.map(type => {
+                                 const hasData = rounds.some(r => r.equipo_principal === type && r.fecha === reportConfig.date && !r.isDeleted);
+                                 const isSelected = selectedExportTypes.includes(type);
+                                 return (
+                                   <div 
+                                     key={type} 
+                                     onClick={() => {
+                                       if (isSelected) {
+                                         setSelectedExportTypes(prev => prev.filter(t => t !== type));
+                                       } else {
+                                         setSelectedExportTypes(prev => [...prev, type]);
+                                       }
+                                     }}
+                                     className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-50 border border-transparent'}`}
+                                   >
+                                      <div className="flex items-center gap-3">
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>
+                                            {isSelected && <span className="text-white text-[10px] font-bold">✓</span>}
+                                          </div>
+                                          <span className={`text-xs font-bold ${isSelected ? 'text-blue-900' : 'text-slate-600'}`}>{EQUIPMENT_LABELS[type]}</span>
+                                      </div>
+                                      <div title={hasData ? "Datos disponibles" : "Sin datos registrados"}>
+                                        {hasData ? (
+                                          <span className="text-emerald-500 text-xs">✔️</span>
+                                        ) : (
+                                          <span className="text-slate-300 text-xs">❓</span>
+                                        )}
+                                      </div>
+                                   </div>
+                                 )
+                              });
+                          })()}
+                       </div>
+                    </div>
                   </div>
               </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
                   <button 
-                    onClick={async () => await generateFormalPDF(rounds.filter(r => !r.isDeleted), reportConfig.date, reportConfig.equipment)} 
+                    onClick={async () => {
+                        if (selectedExportTypes.length === 0) {
+                            alert("Por favor seleccione al menos un sistema para exportar.");
+                            return;
+                        }
+                        await generateFormalPDF(rounds.filter(r => !r.isDeleted), reportConfig.date, selectedExportTypes)
+                    }} 
                     className="flex-1 bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
                   >
-                    Descargar PDF
+                    Descargar PDF ({selectedExportTypes.length})
                   </button>
                   <button 
                     onClick={handleDriveSync}
@@ -709,6 +795,8 @@ const App: React.FC = () => {
                     {syncing ? 'Sincronizando...' : 'Subir Reporte PDF (Drive)'}
                   </button>
               </div>
+
+
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
@@ -916,7 +1004,7 @@ const App: React.FC = () => {
           }
       }} onClose={() => setActiveView(View.DASHBOARD)} />}
       
-      {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds.filter(r => !r.isDeleted)} user={user!} onBack={() => setActiveView(View.DASHBOARD)} />}
+      {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds.filter(r => !r.isDeleted)} user={user!} condicion={sessionData.condicion} onBack={() => setActiveView(View.DASHBOARD)} />}
     </Layout>
   );
 };

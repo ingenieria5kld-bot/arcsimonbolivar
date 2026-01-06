@@ -459,16 +459,20 @@ export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorom
 
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <Field label="T. Salida (°C)" name="temp_salida_ma" min="0" max="40" value={data.temp_salida_ma} previousValue={previousRound?.temp_salida_ma} previousTime={previousTime} onChange={onChange} required />
-      <Field label="T. Retorno (°C)" name="temp_retorno_ma" min="-10" max="40" value={data.temp_retorno_ma} previousValue={previousRound?.temp_retorno_ma} previousTime={previousTime} onChange={onChange} />
-      <Field label="Amperaje (A)" name="amperaje_ma" min="0" max="20" value={data.amperaje_ma} previousValue={previousRound?.amperaje_ma} previousTime={previousTime} onChange={onChange} />
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-bold text-slate-600 uppercase">Heater (On/Off)</label>
-        <select name="heather_ma" value={data.heather_ma || 'off'} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
-          <option value="off">OFF</option>
-          <option value="on">ON</option>
-        </select>
-      </div>
-      <Field label="Frecuencia (Hz)" name="frecuencia_ma" min="0" max="75" value={data.frecuencia_ma} previousValue={previousRound?.frecuencia_ma} previousTime={previousTime} onChange={onChange} />
+      {data.UNIDAD_ACTIVA !== 'Cassete' && (
+        <>
+          <Field label="T. Retorno (°C)" name="temp_retorno_ma" min="-10" max="40" value={data.temp_retorno_ma} previousValue={previousRound?.temp_retorno_ma} previousTime={previousTime} onChange={onChange} />
+          <Field label="Amperaje (A)" name="amperaje_ma" min="0" max="20" value={data.amperaje_ma} previousValue={previousRound?.amperaje_ma} previousTime={previousTime} onChange={onChange} />
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-slate-600 uppercase">Heater (On/Off)</label>
+            <select name="heather_ma" value={data.heather_ma || 'off'} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
+              <option value="off">OFF</option>
+              <option value="on">ON</option>
+            </select>
+          </div>
+          <Field label="Frecuencia (Hz)" name="frecuencia_ma" min="0" max="75" value={data.frecuencia_ma} previousValue={previousRound?.frecuencia_ma} previousTime={previousTime} onChange={onChange} />
+        </>
+      )}
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
   </div>
@@ -492,16 +496,7 @@ export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorom
       <Field label="Temp (°C)" name="temperatura_bt" min="0" max="120" value={data.temperatura_bt} previousValue={previousRound?.temperatura_bt} previousTime={previousTime} onChange={onChange} required />
     </div>
 
-    <SectionHeader title="Bombas Hidráulicas" />
-    <div className="grid grid-cols-2 gap-3">
-      <select name="bomba_hidraulica_bt" value={data.bomba_hidraulica_bt || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white">
-        <option value="1">Bomba #1</option>
-        <option value="2">Bomba #2</option>
-        <option value="ambas">Ambas</option>
-      </select>
-      <Field label="Horas B1" name="horas_bomba_1_bt" value={data.horas_bomba_1_bt} previousValue={previousRound?.horas_bomba_1_bt} previousTime={previousTime} onChange={onChange} required />
-      <Field label="Horas B2" name="horas_bomba_2_bt" value={data.horas_bomba_2_bt} previousValue={previousRound?.horas_bomba_2_bt} previousTime={previousTime} onChange={onChange} />
-    </div>
+
     <ObservationsField value={data.observaciones} onChange={onChange} />
   </div>
 );
