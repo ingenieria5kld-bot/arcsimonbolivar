@@ -38,6 +38,8 @@ export interface UserSG {
   password?: string;
   role: UserRole;
   specialty: UserSpecialty;
+  isDeleted?: boolean;
+  lastUpdated?: number;
 }
 
 export interface AuditLog {
@@ -64,6 +66,8 @@ export interface RoundData {
   trim?: number;
   signature?: string; 
   audit_trail?: AuditLog[];
+  lastUpdated?: number;
+  isDeleted?: boolean;
   [key: string]: any;
 }
 

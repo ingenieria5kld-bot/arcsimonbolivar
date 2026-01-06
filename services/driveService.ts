@@ -6,7 +6,7 @@ import { DRIVE_ROOT_FOLDER_ID } from '../constants';
  * Para que esto funcione, debes subir el código de 'implementation_plan.md' a script.google.com
  * y pegar aquí la URL de implementación (Web App).
  */
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWB0crkyKgFWTIsFkEtg3nvOxyhM2OIWuFm2ctYm6gOfJ70QPkECl4_RLairxZxLN3/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzg83jW1OE-ORAomjBbhwW-vw2I5WAomkxvHYlhekbra8V3_fl2FGN6RFdX2sG8FpYe/exec';
 const SECRETO = 'ARC_SIMBOL_2024';
 
 // Helper to convert blob to base64

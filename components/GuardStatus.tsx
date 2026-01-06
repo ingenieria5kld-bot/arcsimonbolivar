@@ -11,10 +11,13 @@ interface GuardStatusProps {
   user: UserSG;
   onSelectRound: (hour: string, equipment: string, unit: string, existingRound?: RoundData) => void;
   onBack: () => void;
+  condicion: string;
 }
 
-export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, guardEnd, activeHour, user, onSelectRound, onBack }) => {
-  const allowedEquipments = SPECIALTY_EQUIPMENT[user.specialty] || Object.values(EquipmentType);
+export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, guardEnd, activeHour, user, onSelectRound, onBack, condicion }) => {
+  const isDocked = condicion === 'Puerto || Fondeado' || condicion === 'Astillero / Mantenimiento';
+  const allowedEquipments = isDocked ? Object.values(EquipmentType) : (SPECIALTY_EQUIPMENT[user.specialty] || Object.values(EquipmentType));
+  
   const [selectedSystem, setSelectedSystem] = useState<EquipmentType>(allowedEquipments[0]);
   
   const isHighRank = user.role === UserRole.CHIEF_ENGINEER || user.role === UserRole.CHIEF_GUARD;
@@ -37,6 +40,7 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
 
     const guardDay = guardStart.split('T')[0];
     const existingRound = rounds.find(r => 
+      !r.isDeleted &&
       r.fecha === guardDay && 
       r.ronda_de_inspeccion === hourRonda && 
       r.equipo_principal === equipment &&
@@ -78,7 +82,7 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
       <div className="space-y-8">
         <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/50">
           <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4 block">
-            Filtrar Sistema Técnico ({user.specialty === UserSpecialty.PROPULSION ? 'Propulsión' : user.specialty === UserSpecialty.ELECTRICITY ? 'Electricidad' : 'Global'})
+            Filtrar Sistema Técnico ({isDocked ? 'Modo Puerto (Global)' : user.specialty === UserSpecialty.PROPULSION ? 'Propulsión' : user.specialty === UserSpecialty.ELECTRICITY ? 'Electricidad' : 'Global'})
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
             {allowedEquipments.map((key) => (

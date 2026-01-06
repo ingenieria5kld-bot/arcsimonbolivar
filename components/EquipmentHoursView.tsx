@@ -126,6 +126,7 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
 
           // Buscar Horómetro Anterior (09:00 AM del día de inicio de guardia)
           const roundAnt = rounds.find(r => 
+            !r.isDeleted &&
             r.fecha === guardDate && 
             r.ronda_de_inspeccion === '09:00' && 
             r.equipo_principal === mapping.type && 
@@ -134,6 +135,7 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
 
           // Buscar Horómetro Actual (08:00 AM del día siguiente / Fin de guardia)
           const roundAct = rounds.find(r => 
+            !r.isDeleted &&
             (r.fecha === nextDay || r.fecha === guardDate) && // Algunos pueden loguear 08:00 con fecha del día anterior
             r.ronda_de_inspeccion === '08:00' && 
             r.equipo_principal === mapping.type && 

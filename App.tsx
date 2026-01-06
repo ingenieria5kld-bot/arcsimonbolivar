@@ -113,33 +113,150 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, [rounds, staffLists]);
 
-  const triggerMasterSync = async (showAlerts = false) => {
+  const triggerMasterSync = async (showAlerts = false, overrideStaff?: UserSG[], overrideRounds?: RoundData[]) => {
     try {
-        // Obtenemos el estado actual de rounds mediante una referencia funcional si es necesario,
-        // pero aquí rounds viene del scope. Sin embargo, para seguridad total en el envío:
-        const sanitizedRounds = rounds.map(r => {
+        // Use overrideRounds if provided (creating from fresh state), otherwise use current state
+        const sourceRounds = overrideRounds || rounds;
+
+        const sanitizedRounds = sourceRounds.map(r => {
            if (r.UNIQUE_KEY) return r;
            return {
              ...r,
              UNIQUE_KEY: `AUTO_${r.fecha}_${r.ronda_de_inspeccion.replace(':','')}_${r.equipo_principal}_${Math.random().toString(36).substr(2, 5)}`
            };
         });
+        
+        const staffToSend = overrideStaff || staffLists.sg;
+        const masterData = await performMasterSync(sanitizedRounds, staffToSend);
+// ...
 
-        const masterData = await performMasterSync(sanitizedRounds, staffLists.sg);
+  const handleDeleteRound = () => {
+    if (!currentRound.UNIQUE_KEY) return;
+    
+    // Permission check
+    if (user?.role !== UserRole.CHIEF_ENGINEER && user?.role !== UserRole.CHIEF_GUARD) {
+        return alert("Permisos insuficientes. Solo Jefes pueden eliminar registros.");
+    }
+
+    if (!window.confirm("⚠️ ¿ESTÁ SEGURO DE ELIMINAR ESTE REPORTE?\n\nLa ronda regresará a estado 'Pendiente' y se sincronizará la eliminación.")) {
+        return;
+    }
+
+    const updatedRounds = rounds.map(r => {
+        if (r.UNIQUE_KEY === currentRound.UNIQUE_KEY) {
+             // FORCE TIMESTAMP WIN: Add 5 seconds to ensure deletion overrides any simultaneous server state
+            const newTs = Date.now() + 5000;
+            return { ...r, isDeleted: true, lastUpdated: newTs };
+        }
+        return r;
+    });
+
+    setRounds(updatedRounds);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
+    
+    alert("Registro eliminado correctamente.");
+    setActiveView(View.GUARD_STATUS);
+    
+    // Sync deletion immediately passing the NEW Ref
+    triggerMasterSync(false, undefined, updatedRounds);
+  };
+// ... [rest of function same until handleDeleteRound] ...
+
+
         if (masterData) {
             // Actualizamos Rondas con patrón funcional para evitar estados viejos (stale)
             if (masterData.rounds) {
-                setRounds(masterData.rounds);
-                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(masterData.rounds));
+                setRounds(currentLocalRounds => {
+                    // MERGE STRATEGY: Prefer Server Data, but keep Local-Only data (unsynced items)
+                    const masterMap = new Map((masterData.rounds as RoundData[]).map(r => [r.UNIQUE_KEY, r]));
+                    const merged = [...(masterData.rounds as RoundData[])];
+                    
+                    currentLocalRounds.forEach(r => {
+                         // If local round has a key NOT present in master, assume it's a new unsynced round -> Keep it
+                         if (r.UNIQUE_KEY && !masterMap.has(r.UNIQUE_KEY)) {
+                             merged.push(r);
+                         }
+                    });
+
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(merged));
+                    return merged;
+                });
             }
 
-            // Actualizamos Personal con patrón funcional
+            // Actualizamos Personal con patrón funcional y MERGE
             if (masterData.staff) {
                 setStaffLists(prev => {
-                    const updated = { ...prev, sg: masterData.staff };
+                    const masterStaff = masterData.staff as UserSG[];
+                    const localStaff = prev.sg;
+
+                    // Helper for unique ID (Grade + Name)
+                    const getUserId = (u: UserSG) => `${u.grade?.trim().toUpperCase()}_${u.name?.trim().toUpperCase()}`;
+                    const masterIds = new Set(masterStaff.map(getUserId));
+                    
+                    let mergedSg = [...masterStaff];
+                    
+                    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+                    const now = Date.now();
+                    
+                    localStaff.forEach(u => {
+                        // ZOMBIE PREVENTION for Staff
+                        if (!masterIds.has(getUserId(u))) {
+                             const lastUpdate = u.lastUpdated || 0;
+                             if (now - lastUpdate < TWO_HOURS_MS) {
+                                  mergedSg.push(u);
+                             }
+                        }
+                    });
+                    
+                    // GARBAGE COLLECTION LOCAL: Eliminar física y definitivamente los registros marcados como borrados hace > 1 hora
+                    const ONE_HOUR_MS = 60 * 60 * 1000;
+                    // reuse 'now' from above
+                    
+                    mergedSg = mergedSg.filter(u => {
+                        // Si está borrado y pasaron más de 1 hora, limpieza total local
+                        if (u.isDeleted && u.lastUpdated && (now - u.lastUpdated > ONE_HOUR_MS)) {
+                            return false; 
+                        }
+                        return true;
+                    });
+
+                    const updated = { ...prev, sg: mergedSg };
                     localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updated));
                     return updated;
                 });
+            }
+            
+            // GARBAGE COLLECTION ROUNDS + ZOMBIE PREVENTION
+            if (masterData.rounds) {
+               setRounds(currentLocalRounds => { // Changed param name to match logic
+                   const masterMap = new Map((masterData.rounds as RoundData[]).map(r => [r.UNIQUE_KEY, r]));
+                   const merged = [...(masterData.rounds as RoundData[])];
+                   
+                   const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+                   const ONE_HOUR_MS = 60 * 60 * 1000;
+                   const now = Date.now();
+
+                   currentLocalRounds.forEach(r => {
+                          // ZOMBIE PREVENTION LOGIC:
+                          if (r.UNIQUE_KEY && !masterMap.has(r.UNIQUE_KEY)) {
+                              const lastUpdate = r.lastUpdated || 0;
+                              // If it's fresh (created/edited recently), we assume it's offline work waiting to upload.
+                              if (now - lastUpdate < TWO_HOURS_MS) {
+                                  merged.push(r);
+                              } 
+                              // Else: It's old and server doesn't have it -> Assume server Hard Deleted it -> Drop/Ignore
+                          }
+                   });
+                   
+                   // GARBAGE COLLECTION (Hard Delete Local)
+                   const finalDocs = merged.filter(r => {
+                       if (r.isDeleted && r.lastUpdated && (now - r.lastUpdated > ONE_HOUR_MS)) {
+                           return false; 
+                       }
+                       return true;
+                   });
+                   return finalDocs;
+               });
             }
 
             if (showAlerts) {
@@ -184,7 +301,9 @@ const App: React.FC = () => {
       name: (formData.get('name') as string).toUpperCase(),
       password: formData.get('password') as string,
       role: role || UserRole.OPERATOR,
-      specialty: specialty
+      specialty: specialty,
+      isDeleted: false,
+      lastUpdated: Date.now()
     };
 
     const updatedStaff = { ...staffLists, sg: [...staffLists.sg, newUser] };
@@ -196,8 +315,8 @@ const App: React.FC = () => {
     setActiveView(View.DASHBOARD);
     alert("Registro exitoso.");
     
-    // SINCRONIZACIÓN INMEDIATA para que aparezca en otros dispositivos
-    triggerMasterSync(false);
+    // SINCRONIZACIÓN INMEDIATA enviando la lista actualizada explícitamente
+    triggerMasterSync(false, updatedStaff.sg);
   };
 
   const handleDriveSync = async () => {
@@ -267,7 +386,9 @@ const App: React.FC = () => {
       TIMESTAMP_GUARDADO: isEditing ? previousVersion?.TIMESTAMP_GUARDADO! : new Date().toLocaleString(),
       signature: signatureBase64 || previousVersion?.signature,
       audit_trail: auditTrail.length > 0 ? auditTrail : undefined,
-      ...currentRound
+      ...currentRound,
+      lastUpdated: Date.now(),
+      isDeleted: false
     };
 
     updatedRounds.push(newRound);
@@ -275,6 +396,36 @@ const App: React.FC = () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
     alert(isEditing ? "Registro corregido y auditado correctamente." : "Certificado guardado correctamente.");
     setActiveView(View.GUARD_STATUS);
+  };
+
+  const handleDeleteRound = () => {
+    if (!currentRound.UNIQUE_KEY) return;
+    
+    // Permission check
+    if (user?.role !== UserRole.CHIEF_ENGINEER && user?.role !== UserRole.CHIEF_GUARD) {
+        return alert("Permisos insuficientes. Solo Jefes pueden eliminar registros.");
+    }
+
+    if (!window.confirm("⚠️ ¿ESTÁ SEGURO DE ELIMINAR ESTE REPORTE?\n\nLa ronda regresará a estado 'Pendiente' y se sincronizará la eliminación.")) {
+        return;
+    }
+
+    const updatedRounds = rounds.map(r => {
+        if (r.UNIQUE_KEY === currentRound.UNIQUE_KEY) {
+             // FORCE TIMESTAMP WIN: Add 5 seconds to ensure deletion overrides any simultaneous server state
+            return { ...r, isDeleted: true, lastUpdated: Date.now() + 5000 };
+        }
+        return r;
+    });
+
+    setRounds(updatedRounds);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
+    
+    alert("Registro eliminado correctamente.");
+    setActiveView(View.GUARD_STATUS);
+    
+    // Sync deletion immediately
+    triggerMasterSync(false, undefined, updatedRounds);
   };
 
   const renderEquipmentForm = () => {
@@ -344,7 +495,7 @@ const App: React.FC = () => {
                 localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(adminUser));
                 setActiveView(View.DASHBOARD);
             } else {
-                const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password);
+                const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password && !u.isDeleted);
                 if (found) {
                   const finalUser = { ...found };
                   if (finalUser.role === UserRole.CHIEF_ENGINEER || finalUser.role === UserRole.CHIEF_GUARD) {
@@ -363,7 +514,7 @@ const App: React.FC = () => {
               <select name="gradeName" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold outline-none focus:border-navy transition-all" required>
                 <option value="">Seleccione...</option>
                 <option value="ADMIN 1">ADMINISTRADOR (DEMO)</option>
-                {staffLists.sg.map((u, i) => <option key={i} value={`${u.grade} ${u.name}`}>{u.grade} {u.name} ({u.specialty === UserSpecialty.PROPULSION ? 'Mot' : 'Ele'})</option>)}
+                {staffLists.sg.filter(u => !u.isDeleted).map((u, i) => <option key={i} value={`${u.grade} ${u.name}`}>{u.grade} {u.name} ({u.specialty === UserSpecialty.PROPULSION ? 'Mot' : 'Ele'})</option>)}
               </select>
             </div>
             
@@ -499,7 +650,7 @@ const App: React.FC = () => {
           onBack={() => setActiveView(View.DASHBOARD)} 
           isReliefContext={true}
           user={user}
-          rounds={rounds}
+          rounds={rounds.filter(r => !r.isDeleted)}
           guardDate={sessionData.guardStart.split('T')[0]}
           onConfirmed={() => {
             const guardDay = sessionData.guardStart.split('T')[0];
@@ -545,7 +696,7 @@ const App: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
                   <button 
-                    onClick={async () => await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment)} 
+                    onClick={async () => await generateFormalPDF(rounds.filter(r => !r.isDeleted), reportConfig.date, reportConfig.equipment)} 
                     className="flex-1 bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
                   >
                     Descargar PDF
@@ -564,7 +715,7 @@ const App: React.FC = () => {
                 <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
                     <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Respaldar Base de Datos</p>
                     <div className="flex flex-col gap-2">
-                      <button onClick={async () => await exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Local)</button>
+                      <button onClick={async () => await exportDetailedCSV(rounds.filter(r=>!r.isDeleted))} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Local)</button>
                        <button 
                         disabled={syncing}
                         onClick={async () => {
@@ -660,17 +811,18 @@ const App: React.FC = () => {
           staffLists={staffLists} 
           setStaffLists={setStaffLists} 
           onBack={() => setActiveView(View.DASHBOARD)} 
-          triggerSync={() => triggerMasterSync(false)}
+          triggerSync={(updatedList) => triggerMasterSync(false, updatedList?.sg)}
         />
       )}
 
       {activeView === View.GUARD_STATUS && (
         <GuardStatus 
-            rounds={rounds} 
+            rounds={rounds.filter(r => !r.isDeleted)} 
             guardStart={sessionData.guardStart} 
             guardEnd={sessionData.guardEnd}
             activeHour={sessionData.ronda_de_inspeccion}
             user={user!}
+            condicion={sessionData.condicion}
             onSelectRound={(h, e, u, existingRound) => {
                 const guardDay = sessionData.guardStart.split('T')[0];
                 const isConfirmed = localStorage.getItem(`hours_confirmed_${guardDay}_${user?.specialty}`) === 'true';
@@ -710,11 +862,22 @@ const App: React.FC = () => {
                 )}
            </div>
            {renderEquipmentForm()}
-           <div className="flex gap-4 pt-10">
-              <button onClick={() => setActiveView(View.GUARD_STATUS)} className="flex-1 bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-xs">Volver</button>
-              <button onClick={() => setActiveView(View.ANALYSIS)} className="flex-1 bg-navy text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl">
-                {currentRound.UNIQUE_KEY ? 'Finalizar Corrección' : 'Verificar Parámetros'}
-              </button>
+           <div className="flex flex-col gap-3 pt-10">
+              <div className="flex gap-4">
+                  <button onClick={() => setActiveView(View.GUARD_STATUS)} className="flex-1 bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-xs">Volver</button>
+                  <button onClick={() => setActiveView(View.ANALYSIS)} className="flex-1 bg-navy text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl">
+                    {currentRound.UNIQUE_KEY ? 'Finalizar Corrección' : 'Verificar Parámetros'}
+                  </button>
+              </div>
+              
+              {currentRound.UNIQUE_KEY && (user?.role === UserRole.CHIEF_ENGINEER || user?.role === UserRole.CHIEF_GUARD) && (
+                 <button 
+                  onClick={handleDeleteRound}
+                  className="w-full bg-rose-50 text-rose-500 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border border-rose-100 hover:bg-rose-100 transition-all"
+                 >
+                    ⚠️ Eliminar Reporte (Jefatura)
+                 </button>
+              )}
            </div>
         </div>
       )}
@@ -753,7 +916,7 @@ const App: React.FC = () => {
           }
       }} onClose={() => setActiveView(View.DASHBOARD)} />}
       
-      {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds} user={user!} onBack={() => setActiveView(View.DASHBOARD)} />}
+      {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds.filter(r => !r.isDeleted)} user={user!} onBack={() => setActiveView(View.DASHBOARD)} />}
     </Layout>
   );
 };
