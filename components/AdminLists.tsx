@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { UserSG, StaffLists, UserRole, UserSpecialty } from '../types';
 import { STAFF_LISTS_KEY } from '../constants';
+import { saveToStorage } from '../services/storageService';
 
 interface AdminListsProps {
   staffLists: StaffLists;
@@ -86,7 +87,7 @@ export const AdminLists: React.FC<AdminListsProps> = ({ staffLists, setStaffList
 
   const saveAndSync = (updatedList: StaffLists, message: string) => {
     setStaffLists(updatedList);
-    localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updatedList));
+    saveToStorage(STAFF_LISTS_KEY, updatedList);
     alert(message);
     triggerSync(updatedList);
   };

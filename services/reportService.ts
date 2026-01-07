@@ -1,5 +1,5 @@
 import { RoundData, EquipmentType } from '../types';
-import { EQUIPMENT_LABELS, ROUND_TIMES } from '../constants';
+import { EQUIPMENT_LABELS, ROUND_TIMES, DATA_LIMITS } from '../constants';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
@@ -30,28 +30,36 @@ const saveAndShareFile = async (blob: Blob, fileName: string) => {
       console.log('Iniciando proceso de guardado nativo:', fileName);
       const base64Data = await blobToBase64(blob);
       
-      // Intentamos escribir en Cache
-      const savedFile = await Filesystem.writeFile({
-        path: fileName,
+      const FOLDER = 'ARC_INFORMES';
+      const fullPath = `${FOLDER}/${fileName}`;
+
+      // 1. Asegurar que existe la carpeta
+      try {
+        await Filesystem.mkdir({
+          path: FOLDER,
+          directory: Directory.Documents,
+          recursive: true
+        });
+      } catch (e) {
+        // Ignorar si ya existe
+      }
+
+      // 2. Escribir el archivo
+      const result = await Filesystem.writeFile({
+        path: fullPath,
         data: base64Data,
-        directory: Directory.Cache,
+        directory: Directory.Documents,
+        recursive: true
       });
 
-      // Verificamos si podemos compartir
-      const canShare = await Share.canShare();
-      if (canShare.value) {
-        await Share.share({
-          title: 'Compartir Reporte',
-          text: `Reporte generado: ${fileName}`,
-          url: savedFile.uri,
-          dialogTitle: `Guardar/Enviar ${fileName}`,
-        });
-      } else {
-        alert("El sistema no permite compartir archivos directamente.");
-      }
+      console.log('Archivo guardado en:', result.uri);
+      
+      // 3. Notificar al usuario (Sin Share automÃ¡tico)
+      alert(`✅ Archivo descargado exitosamente.\n\nRuta: Documentos/${fullPath}`);
+
     } catch (error: any) {
       console.error('Error detallado:', error);
-      alert(`ERROR CRÍTICO: ${error.message || JSON.stringify(error)}`);
+      alert(`ERROR al guardar: ${error.message || JSON.stringify(error)}`);
     }
   } else {
     // Fallback for web
@@ -322,9 +330,34 @@ const createAndSavePDF = async (rounds: RoundData[], date: string, equipmentType
         const tableData = ROUND_TIMES.map(hour => {
         const roundAtHour = unitRounds.find(r => r.ronda_de_inspeccion === hour);
         if (!roundAtHour) return [hour, ...techKeys.map(() => '-'), ''];
+        
         return [
             hour,
-            ...techKeys.map(key => roundAtHour[key] !== undefined ? roundAtHour[key] : '-'),
+            ...techKeys.map(key => {
+                const rawValue = roundAtHour[key] !== undefined ? roundAtHour[key] : '-';
+                
+                // Validación de Límites para Coloreado
+                const limits = DATA_LIMITS[key];
+                if (limits && rawValue !== '-' && rawValue !== '') {
+                    const numVal = parseFloat(rawValue as string);
+                    if (!isNaN(numVal)) {
+                        const min = limits.min !== undefined ? limits.min : -Infinity;
+                        const max = limits.max !== undefined ? limits.max : Infinity;
+                        
+                        if (numVal < min || numVal > max) {
+                            return { 
+                                content: rawValue, 
+                                styles: { 
+                                    textColor: [220, 38, 38], // Rojo Intenso (Tailwind red-600)
+                                    fontStyle: 'bold' 
+                                } 
+                            };
+                        }
+                    }
+                }
+                
+                return rawValue;
+            }),
             roundAtHour.sg
         ];
         });

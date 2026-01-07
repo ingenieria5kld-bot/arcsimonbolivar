@@ -39,9 +39,15 @@ export const GuardStatus: React.FC<GuardStatusProps> = ({ rounds, guardStart, gu
     const isFutureReal = rDate.getTime() > margin;
 
     const guardDay = guardStart.split('T')[0];
+    
+    // Calculate Next Day String for 00:00 - 08:00 rounds
+    const gStartObj = new Date(guardStart);
+    gStartObj.setDate(gStartObj.getDate() + 1);
+    const nextDayString = gStartObj.toISOString().split('T')[0];
+
     const existingRound = rounds.find(r => 
       !r.isDeleted &&
-      r.fecha === guardDay && 
+      (r.fecha === guardDay || r.fecha === nextDayString) && 
       r.ronda_de_inspeccion === hourRonda && 
       r.equipo_principal === equipment &&
       r.UNIDAD_ACTIVA === unit

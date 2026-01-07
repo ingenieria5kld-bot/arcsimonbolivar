@@ -31,13 +31,17 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
       try {
         await BarcodeScanner.installGoogleBarcodeScannerModule();
       } catch (installErr: any) {
-        // Ignore if already installed
-        if (!installErr?.message?.includes('already installed')) {
-          console.warn("Module install warning:", installErr);
+        // This is expected if the module is already downloaded. Silent ignore.
+        // We log it as info for debugging but it is NOT a critical error.
+        const msg = installErr?.message || JSON.stringify(installErr);
+        if (!msg.includes('already installed')) {
+             console.warn("[QRScanner] Module install warning (non-fatal):", installErr);
         }
       }
 
       // 4. Start Scan (Google Code Scanner UI)
+      // NOTE: This will pause the App (Activity) as it opens a Google Play Services overlay.
+      // "App paused" / "App stopped" logs are NORMAL.
       const result = await BarcodeScanner.scan({
         formats: [], // All formats
       });
@@ -50,13 +54,15 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
       }
 
     } catch (err: any) {
-      console.error("QR Scan Error:", err);
-      // Handle cancellation specifically if needed, otherwise show error
-      if (err?.message?.includes('canceled')) {
+      // Handle known harmless errors
+      const msg = err?.message || '';
+      if (msg.includes('canceled') || msg.includes('cancelled')) {
         onClose();
-      } else {
-        setError('Error al iniciar el escáner: ' + (err.message || 'Desconocido'));
+        return;
       }
+      
+      console.error("[QRScanner] Fatal Error:", err);
+      setError('Error al iniciar: ' + (msg || 'Error desconocido'));
     }
   };
 

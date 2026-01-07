@@ -24,6 +24,7 @@ import { EquipmentHoursView } from './components/EquipmentHoursView';
 import { AppGuide } from './components/AppGuide';
 import { generateFormalPDF, exportDetailedCSV } from './services/reportService';
 import { initDriveApi, uploadToDrive, performMasterSync } from './services/driveService';
+import { saveToStorage, loadFromStorage, removeFromStorage } from './services/storageService';
 
 const getNavalGuardRange = () => {
   const now = new Date();
@@ -54,6 +55,11 @@ const getNavalGuardRange = () => {
 };
 
 const App: React.FC = () => {
+  // DEBUG LOG
+  React.useEffect(() => {
+    console.log("[ARC_BOOT] 🚀 APP STARTED SUCCESSFULLY - LOGS ACTIVE");
+  }, []);
+
   const [activeView, setActiveView] = useState<View>(View.LOGIN);
   const [user, setUser] = useState<UserSG | null>(null);
   const [staffLists, setStaffLists] = useState<StaffLists>({ sg: [], sgi: [], ogi: [] });
@@ -82,20 +88,29 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setCurrentOrigin(window.location.origin);
-    const storedUser = localStorage.getItem(LOGGED_USER_KEY);
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-      setActiveView(View.DASHBOARD);
-    }
-    const storedStaff = localStorage.getItem(STAFF_LISTS_KEY);
-    if (storedStaff) setStaffLists(JSON.parse(storedStaff));
-    const storedRounds = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (storedRounds) setRounds(JSON.parse(storedRounds));
-
-    initDriveApi().then(() => {
-        // Al iniciar, sincronizamos de inmediato si hay red
-        triggerMasterSync(false); 
-    }).catch(err => console.error("Error Drive Init:", err));
+    
+    // ASYNC INITIALIZATION
+    const initApp = async () => {
+        try {
+            const storedUser = await loadFromStorage<UserSG>(LOGGED_USER_KEY);
+            if (storedUser) {
+              setUser(storedUser);
+              setActiveView(View.DASHBOARD);
+            }
+            const storedStaff = await loadFromStorage<StaffLists>(STAFF_LISTS_KEY);
+            if (storedStaff) setStaffLists(storedStaff);
+            const storedRounds = await loadFromStorage<RoundData[]>(LOCAL_STORAGE_KEY);
+            if (storedRounds) setRounds(storedRounds);
+            
+            initDriveApi().then(() => {
+                // Al iniciar, sincronizamos de inmediato si hay red
+                triggerMasterSync(false); 
+            }).catch(err => console.error("Error Drive Init:", err));
+        } catch(e) {
+            console.error("App Init Error:", e);
+        }
+    };
+    initApp();
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(() => {
@@ -153,7 +168,7 @@ const App: React.FC = () => {
     });
 
     setRounds(updatedRounds);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
+    saveToStorage(LOCAL_STORAGE_KEY, updatedRounds); // Async fire-and-forget OK here for UI responsiveness
     
     alert("Registro eliminado correctamente.");
     setActiveView(View.GUARD_STATUS);
@@ -179,7 +194,7 @@ const App: React.FC = () => {
                          }
                     });
 
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(merged));
+                    saveToStorage(LOCAL_STORAGE_KEY, merged);
                     return merged;
                 });
             }
@@ -222,7 +237,7 @@ const App: React.FC = () => {
                     });
 
                     const updated = { ...prev, sg: mergedSg };
-                    localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updated));
+                    saveToStorage(STAFF_LISTS_KEY, updated);
                     return updated;
                 });
             }
@@ -282,7 +297,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     if (window.confirm("¿Desea cerrar la sesión actual para realizar el cambio de usuario (Relevo)?")) {
-      localStorage.removeItem(LOGGED_USER_KEY);
+      removeFromStorage(LOGGED_USER_KEY);
       setUser(null);
       setCurrentRound({ on_off: 'y' }); 
       setActiveView(View.LOGIN);
@@ -309,10 +324,10 @@ const App: React.FC = () => {
 
     const updatedStaff = { ...staffLists, sg: [...staffLists.sg, newUser] };
     setStaffLists(updatedStaff);
-    localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updatedStaff));
+    saveToStorage(STAFF_LISTS_KEY, updatedStaff);
     
     setUser(newUser);
-    localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(newUser));
+    saveToStorage(LOGGED_USER_KEY, newUser);
     setActiveView(View.DASHBOARD);
     alert("Registro exitoso.");
     
@@ -406,7 +421,7 @@ const App: React.FC = () => {
 
     updatedRounds.push(newRound);
     setRounds(updatedRounds);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
+    saveToStorage(LOCAL_STORAGE_KEY, updatedRounds);
     alert(isEditing ? "Registro corregido y auditado correctamente." : "Certificado guardado correctamente.");
     setActiveView(View.GUARD_STATUS);
   };
@@ -432,7 +447,7 @@ const App: React.FC = () => {
     });
 
     setRounds(updatedRounds);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
+    saveToStorage(LOCAL_STORAGE_KEY, updatedRounds);
     
     alert("Registro eliminado correctamente.");
     setActiveView(View.GUARD_STATUS);
@@ -505,7 +520,7 @@ const App: React.FC = () => {
             if (gradeName === "ADMIN 1" && password === "arcadmin_1") {
                 const adminUser: UserSG = { grade: 'ADMIN', name: '1', role: UserRole.CHIEF_ENGINEER, specialty: UserSpecialty.ALL };
                 setUser(adminUser);
-                localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(adminUser));
+                saveToStorage(LOGGED_USER_KEY, adminUser);
                 setActiveView(View.DASHBOARD);
             } else {
                 const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password && !u.isDeleted);
@@ -515,7 +530,7 @@ const App: React.FC = () => {
                     finalUser.specialty = UserSpecialty.ALL;
                   }
                   setUser(finalUser);
-                  localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(finalUser));
+                  saveToStorage(LOGGED_USER_KEY, finalUser);
                   setActiveView(View.DASHBOARD);
                 } else { 
                   alert("Usuario o contraseña incorrectos."); 
@@ -667,7 +682,7 @@ const App: React.FC = () => {
           guardDate={sessionData.guardStart.split('T')[0]}
           onConfirmed={() => {
             const guardDay = sessionData.guardStart.split('T')[0];
-            localStorage.setItem(`hours_confirmed_${guardDay}_${user?.specialty}`, 'true');
+            saveToStorage(`hours_confirmed_${guardDay}_${user?.specialty}`, 'true');
             alert("Reporte de horas confirmado para su división.");
             setActiveView(View.GUARD_STATUS);
           }}

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserSpecialty, UserSG, UserRole, RoundData, EquipmentType } from '../types';
+import { saveToStorage, loadFromStorage } from '../services/storageService';
 
 interface EquipmentHourRow {
   id: string;
@@ -20,6 +21,53 @@ interface EquipmentHoursViewProps {
   rounds: RoundData[];
   guardDate: string;
 }
+
+interface RowProps {
+  row: EquipmentHourRow;
+  section: 'main' | 'aux';
+  isEditMode: boolean;
+  isReliefContext?: boolean;
+  onUpdate: (section: 'main' | 'aux', id: string, field: 'horasDia' | 'horasAct' | 'horasAnt', value: string) => void;
+}
+
+const RowComponent: React.FC<RowProps> = ({ row, section, isEditMode, isReliefContext, onUpdate }) => {
+  const isError = row.horasDia < 0 || row.horasDia > 24.5;
+  const canEditRow = isEditMode || !isReliefContext; 
+
+  return (
+    <tr className={`border-b border-slate-100 transition-colors ${isError ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+      <td className="py-3 px-4 text-[11px] font-black text-navy uppercase leading-tight">{row.name}</td>
+      
+      <td className="py-2 px-2 text-center">
+        <input 
+          type="number" 
+          step="0.1"
+          value={row.horasAnt} 
+          disabled={!canEditRow}
+          onChange={(e) => onUpdate(section, row.id, 'horasAnt', e.target.value)}
+          className={`w-24 border-2 border-slate-100 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none ${!canEditRow ? 'bg-slate-50 text-slate-400' : 'focus:border-navy'}`}
+        />
+      </td>
+
+      <td className="py-2 px-2 text-center">
+        <input 
+          type="number" 
+          step="0.1"
+          value={row.horasAct} 
+          disabled={!canEditRow}
+          onChange={(e) => onUpdate(section, row.id, 'horasAct', e.target.value)}
+          className={`w-24 border-2 border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none ${!canEditRow ? 'bg-slate-50 text-slate-400' : 'focus:border-navy'}`}
+        />
+      </td>
+
+      <td className="py-2 px-2 text-center">
+        <span className={`text-xs font-black ${isError ? 'text-red-600' : 'text-blue-600'}`}>
+          {row.horasDia.toFixed(1)}
+        </span>
+      </td>
+    </tr>
+  );
+};
 
 export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, isReliefContext, onConfirmed, user, rounds, guardDate }) => {
   const STORAGE_KEY = 'equipment_hours_state_v3';
@@ -93,14 +141,15 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
   const [isEditMode, setIsEditMode] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    let currentData = INITIAL_DATA;
+    const loadData = async () => {
+      const saved = await loadFromStorage<typeof INITIAL_DATA>(STORAGE_KEY);
+      let currentData = INITIAL_DATA;
 
-    if (saved) {
-      currentData = JSON.parse(saved);
-      // Sincronizar especialidades por si cambiaron en el código
-      ['main', 'aux'].forEach((section) => {
-        (currentData as any)[section] = (currentData as any)[section].map((row: any) => {
+      if (saved) {
+        currentData = saved;
+        // Sincronizar especialidades por si cambiaron en el código
+        ['main', 'aux'].forEach((section) => {
+          (currentData as any)[section] = (currentData as any)[section].map((row: any) => {
           const initialRow = (INITIAL_DATA as any)[section].find((r: any) => r.id === row.id);
           if (initialRow) {
             return { ...row, specialty: initialRow.specialty };
@@ -156,9 +205,12 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
       return updated;
     };
 
-    const syncedData = syncWithRounds(currentData);
-    setData(syncedData);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(syncedData));
+      const syncedData = syncWithRounds(currentData);
+      setData(syncedData);
+      saveToStorage(STORAGE_KEY, syncedData);
+    };
+    
+    loadData();
   }, [rounds, guardDate]);
 
   const handleUpdate = (section: 'main' | 'aux', id: string, field: 'horasDia' | 'horasAct' | 'horasAnt', value: string) => {
@@ -180,14 +232,13 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
       }
       
       setData(newData);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+      saveToStorage(STORAGE_KEY, newData);
     }
   };
 
   const validateAndConfirm = () => {
-    const filteredMain = data.main.filter(r => userSpecialty === UserSpecialty.ALL || r.specialty === userSpecialty);
-    const filteredAux = data.aux.filter(r => userSpecialty === UserSpecialty.ALL || r.specialty === userSpecialty);
-    const allRows = [...filteredMain, ...filteredAux];
+    // Validate on ALL data, no filtering
+    const allRows = [...data.main, ...data.aux];
 
     const hasInvalid = allRows.some(r => r.horasDia < 0 || r.horasDia > 24.5);
     
@@ -206,48 +257,8 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
     }
   };
 
-  const RowComponent: React.FC<{ row: EquipmentHourRow, section: 'main' | 'aux' }> = ({ row, section }) => {
-    const isError = row.horasDia < 0 || row.horasDia > 24.5;
-    const canEditRow = isEditMode || !isReliefContext; 
-
-    return (
-      <tr className={`border-b border-slate-100 transition-colors ${isError ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
-        <td className="py-3 px-4 text-[11px] font-black text-navy uppercase leading-tight">{row.name}</td>
-        
-        <td className="py-2 px-2 text-center">
-          <input 
-            type="number" 
-            step="0.1"
-            value={row.horasAnt} 
-            disabled={!canEditRow}
-            onChange={(e) => handleUpdate(section, row.id, 'horasAnt', e.target.value)}
-            className={`w-24 border-2 border-slate-100 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none ${!canEditRow ? 'bg-slate-50 text-slate-400' : 'focus:border-navy'}`}
-          />
-        </td>
-
-        <td className="py-2 px-2 text-center">
-          <input 
-            type="number" 
-            step="0.1"
-            value={row.horasAct} 
-            disabled={!canEditRow}
-            onChange={(e) => handleUpdate(section, row.id, 'horasAct', e.target.value)}
-            className={`w-24 border-2 border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none ${!canEditRow ? 'bg-slate-50 text-slate-400' : 'focus:border-navy'}`}
-          />
-        </td>
-
-        <td className="py-2 px-2 text-center">
-          <span className={`text-xs font-black ${isError ? 'text-red-600' : 'text-blue-600'}`}>
-            {row.horasDia.toFixed(1)}
-          </span>
-        </td>
-      </tr>
-    );
-  };
-
-  const filteredMain = data.main.filter(r => userSpecialty === UserSpecialty.ALL || r.specialty === userSpecialty);
-  const filteredAux = data.aux.filter(r => userSpecialty === UserSpecialty.ALL || r.specialty === userSpecialty);
-
+  // Removed filteredMain/filteredAux to show everything to everyone
+  
   return (
     <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-10 border border-slate-100 animate-in fade-in duration-500">
       <div className="flex justify-between items-center mb-10">
@@ -273,7 +284,7 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
       </div>
 
       <div className="space-y-12">
-        {filteredMain.length > 0 && (
+        {data.main.length > 0 && (
           <div>
             <div className="bg-navy text-white rounded-t-2xl px-6 py-3 flex justify-between items-center">
                <span className="text-[10px] font-black uppercase tracking-widest">Sistemas Principales</span>
@@ -290,14 +301,14 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredMain.map(row => <RowComponent key={row.id} row={row} section="main" />)}
+                  {data.main.map(row => <RowComponent key={row.id} row={row} section="main" isEditMode={isEditMode} isReliefContext={isReliefContext} onUpdate={handleUpdate} />)}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {filteredAux.length > 0 && (
+        {data.aux.length > 0 && (
           <div>
             <div className="bg-blue-600 text-white rounded-t-2xl px-6 py-3 flex justify-between items-center">
                <span className="text-[10px] font-black uppercase tracking-widest">Sistemas Auxiliares</span>
@@ -313,7 +324,7 @@ export const EquipmentHoursView: React.FC<EquipmentHoursViewProps> = ({ onBack, 
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAux.map(row => <RowComponent key={row.id} row={row} section="aux" />)}
+                  {data.aux.map(row => <RowComponent key={row.id} row={row} section="aux" isEditMode={isEditMode} isReliefContext={isReliefContext} onUpdate={handleUpdate} />)}
                 </tbody>
               </table>
             </div>

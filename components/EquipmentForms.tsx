@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { EquipmentType, RoundData } from '../types';
+import { DATA_LIMITS, EQUIPMENT_LABELS, EQUIPMENT_UNITS_MAP } from '../constants';
 
 interface FormProps {
   data: any;
@@ -31,13 +32,15 @@ const Field: React.FC<{
   
   const numValue = parseFloat(value);
   const numPrev = parseFloat(previousValue);
-
+  
   const getStatusClasses = () => {
     if (disabled) return "bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed";
     if (isNaN(numValue) || type !== "number") return "border-slate-200 focus:border-blue-500";
     
-    const minCrit = min ? parseFloat(min) : -Infinity;
-    const maxCrit = max ? parseFloat(max) : Infinity;
+    // Use Centralized Limits if available, ensuring Single Source of Truth
+    const limit = DATA_LIMITS[name];
+    const minCrit = limit?.min !== undefined ? limit.min : (min ? parseFloat(min) : -Infinity);
+    const maxCrit = limit?.max !== undefined ? limit.max : (max ? parseFloat(max) : Infinity);
 
     if (numValue < minCrit || numValue > maxCrit) {
       return "bg-rose-50 border-rose-500 text-rose-900 focus:ring-rose-200";
@@ -107,37 +110,98 @@ const ObservationsField: React.FC<{ value: string; onChange: any }> = ({ value, 
   </div>
 );
 
-const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound, previousTime, showHorometro, showTrim }) => (
-  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 shadow-inner space-y-4">
-    {showHorometro && (
-      <Field 
-        label="Horas de Operación (Horómetro)" 
-        name="horometro" 
-        type="number" 
-        step="0.1" 
-        value={data.horometro} 
-        onChange={onChange} 
-        previousValue={previousRound?.horometro}
-        previousTime={previousTime}
-        required 
-      />
-    )}
-    {showTrim && (
-      <Field 
-        label="TRIM (L)" 
-        name="trim" 
-        type="number" 
-        step="1" 
-        value={data.trim} 
-        onChange={onChange} 
-        previousValue={previousRound?.trim}
-        previousTime={previousTime}
-        required 
-        placeholder="Nivel de Tanque para cálculo de consumo"
-      />
-    )}
-  </div>
-);
+const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound, previousTime, showHorometro, showTrim }) => {
+  // console.log("[SpecialFieldsInput] Init", { type: data.equipo_principal, horometro: data.horometro });
+
+  // Helper to detect if we should use "Hours Worked" mode
+  // Conditions: 
+  // 1. Equipment is Frigorificos or Manejadoras
+  // 2. We are in the 08:00 context (implied by showHorometro=true and previousTime='09:00')
+  // 3. We have a valid previous reading
+  
+  const targetEquipment = data.equipo_principal === 'frigorificos' || data.equipo_principal === 'manejadoras_aire';
+  const is0800Context = showHorometro && previousTime === '09:00';
+  const hasPrevious = previousRound && previousRound.horometro !== undefined && previousRound.horometro !== null;
+
+  const performHoursCalc = targetEquipment && is0800Context && hasPrevious;
+
+  const handleHoursWorkedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const workedHours = parseFloat(e.target.value);
+    if (isNaN(workedHours)) {
+      // If empty/invalid, maybe just pass the value as is or 0? 
+      // Better to pass the raw calculate back if possible, but here we are mapping to Total.
+      // If user clears input, we might set it to previousRound.horometro (0 hours worked)
+      onChange({ target: { name: 'horometro', value: previousRound!.horometro } } as any);
+      return;
+    }
+    const newTotal = (parseFloat(previousRound!.horometro as any) + workedHours).toFixed(1);
+    onChange({ target: { name: 'horometro', value: newTotal } } as any);
+  };
+
+  // Calculate displayed "Hours Worked"
+  const currentTotal = parseFloat(data.horometro);
+  const prevTotal = hasPrevious ? parseFloat(previousRound!.horometro as any) : 0;
+  const displayedHoursWorked = !isNaN(currentTotal) && !isNaN(prevTotal) ? (currentTotal - prevTotal).toFixed(1) : '';
+
+  return (
+    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 shadow-inner space-y-4">
+      {showHorometro && (
+        <>
+          {performHoursCalc ? (
+             <div className="flex flex-col gap-1">
+               <div className="flex justify-between items-center">
+                 <label className="text-[11px] font-bold text-blue-700 uppercase tracking-tight">Horas Trabajadas Hoy*</label>
+                 <span className="text-[9px] text-slate-400 font-medium">
+                   Ant: <span className="text-blue-600 font-bold">{prevTotal}</span>
+                 </span>
+               </div>
+               <input 
+                 type="number"
+                 step="0.1"
+                 min="0"
+                 max="24"
+                 placeholder="Ej: 15"
+                 value={displayedHoursWorked}
+                 onChange={handleHoursWorkedChange}
+                 className="border rounded-lg px-3 py-1.5 text-sm outline-none transition-all border-blue-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 bg-white font-bold text-navy"
+                 required
+               />
+               <p className="text-[9px] text-slate-400 text-right">
+                 Total Acumulado: <strong>{data.horometro || prevTotal}</strong>
+               </p>
+             </div>
+          ) : (
+            <Field 
+              label="Horas de Operación (Horómetro)" 
+              name="horometro" 
+              type="number" 
+              step="0.1" 
+              value={data.horometro} 
+              onChange={onChange} 
+              previousValue={previousRound?.horometro}
+              previousTime={previousTime}
+              required 
+            />
+          )}
+        </>
+      )}
+      {showTrim && (
+        <Field 
+          label="TRIM (L)" 
+          name="trim" 
+          type="number" 
+          step="1" 
+          value={data.trim} 
+          onChange={onChange} 
+          previousValue={previousRound?.trim}
+          previousTime={previousTime}
+          required 
+          placeholder="Nivel de Tanque para cálculo de consumo"
+        />
+      )}
+    </div>
+  );
+};
 
 export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime }) => (
   <div className="space-y-4">
