@@ -10,32 +10,49 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, onCancel }) 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  useEffect(() => {
+  // Resize logic with Persistence (Prevents clearing on rotation)
+  const resizeCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.strokeStyle = '#003366';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    
-    // Ajustar tamaño del canvas al contenedor
-    const resizeCanvas = () => {
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      if (rect) {
-        canvas.width = rect.width;
-        canvas.height = 300;
-        // Reiniciar estilos tras resize
-        ctx.strokeStyle = '#003366';
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
+    const parent = canvas.parentElement;
+    if (parent) {
+      // 1. Save current drawing
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      if (canvas.width > 0 && canvas.height > 0) {
+        tempCanvas.width = canvas.width; 
+        tempCanvas.height = canvas.height;
+        tempCtx?.drawImage(canvas, 0, 0);
       }
-    };
-    
-    resizeCanvas();
+
+      // 2. Resize to fit new parent dimensions
+      canvas.width = parent.clientWidth;
+      canvas.height = parent.clientHeight;
+      
+      // 3. Restore Context Styles (Lost on resize)
+      ctx.strokeStyle = '#003366';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+
+      // 4. Restore Drawing
+      if (tempCanvas.width > 0 && tempCanvas.height > 0) {
+          ctx.drawImage(tempCanvas, 0, 0);
+      }
+    }
+  };
+
+  useEffect(() => {
+    // Initial resize
+    const timer = setTimeout(resizeCanvas, 50);
     window.addEventListener('resize', resizeCanvas);
-    return () => window.removeEventListener('resize', resizeCanvas);
+    
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+      clearTimeout(timer);
+    };
   }, []);
 
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {
@@ -51,7 +68,9 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, onCancel }) 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
+    // Prevent default to stop scrolling interaction
+    if (e.cancelable) e.preventDefault();
+    
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
     const { x, y } = getPos(e);
@@ -61,7 +80,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, onCancel }) 
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     if (!isDrawing) return;
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
@@ -70,7 +89,8 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, onCancel }) 
     ctx.stroke();
   };
 
-  const endDrawing = () => {
+  const endDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    if (e.cancelable) e.preventDefault();
     setIsDrawing(false);
   };
 
@@ -91,17 +111,26 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, onCancel }) 
   };
 
   return (
-    <div className="fixed inset-0 z-[110] bg-slate-900/90 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
+    <div className="fixed inset-0 z-[110] bg-slate-900/95 flex items-center justify-center backdrop-blur-sm sm:p-4">
+      {/* 
+         Responsive Container with SAFE AREA support for Notch
+      */}
+      <div 
+        className="bg-white w-full h-full md:h-auto md:max-h-[90vh] md:max-w-xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }} 
+      >
+        
+        {/* Header */}
+        <div className="p-4 md:p-6 bg-slate-50 border-b flex justify-between items-center shrink-0">
           <div>
-            <h3 className="text-xl font-black text-blue-900 uppercase">Certificación de Ronda</h3>
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Firma táctil del Suboficial de Guardia</p>
+            <h3 className="text-lg md:text-xl font-black text-blue-900 uppercase leading-none">Certificación</h3>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Firma del Suboficial de Guardia</p>
           </div>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 text-3xl">&times;</button>
+          <button onClick={onCancel} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-200 text-slate-500 hover:text-slate-800 text-2xl active:scale-95 transition-all">&times;</button>
         </div>
         
-        <div className="flex-1 bg-white relative group cursor-crosshair m-6 border-2 border-dashed border-slate-200 rounded-2xl overflow-hidden">
+        {/* Canvas Sandbox - Flexible Height */}
+        <div className="flex-1 bg-white relative group cursor-crosshair m-4 border-2 border-dashed border-slate-200 rounded-2xl overflow-hidden touch-none">
           <canvas
             ref={canvasRef}
             onMouseDown={startDrawing}
@@ -111,32 +140,33 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, onCancel }) 
             onTouchStart={startDrawing}
             onTouchMove={draw}
             onTouchEnd={endDrawing}
-            className="w-full h-[300px] touch-none"
+            className="w-full h-full block"
           />
-          <div className="absolute bottom-4 right-4 pointer-events-none opacity-20 text-blue-900 font-black text-4xl uppercase select-none">
+          <div className="absolute bottom-4 right-4 pointer-events-none opacity-20 text-blue-900 font-black text-2xl md:text-4xl uppercase select-none">
             ARC SIMBOL
           </div>
         </div>
 
-        <div className="p-6 bg-slate-50 border-t flex gap-4">
+        {/* Footer Actions */}
+        <div className="p-4 md:p-6 bg-slate-50 border-t flex flex-col sm:flex-row gap-3 shrink-0">
           <button 
             onClick={clear}
-            className="px-6 py-4 rounded-xl font-black text-slate-500 uppercase text-xs hover:bg-slate-200 transition-colors"
+            className="w-full sm:w-auto px-6 py-4 rounded-xl font-black text-slate-500 uppercase text-xs hover:bg-slate-200 transition-colors border-2 border-slate-200 sm:border-transparent"
           >
             Limpiar
           </button>
           <div className="flex-1 flex gap-3">
             <button 
               onClick={onCancel}
-              className="flex-1 px-4 py-4 rounded-xl font-black text-slate-400 uppercase text-xs"
+              className="hidden sm:block flex-1 px-4 py-4 rounded-xl font-black text-slate-400 uppercase text-xs hover:bg-slate-100"
             >
               Cancelar
             </button>
             <button 
               onClick={save}
-              className="flex-1 bg-blue-900 text-white px-8 py-4 rounded-xl font-black uppercase text-xs shadow-lg hover:shadow-blue-900/20 transition-all"
+              className="flex-1 bg-blue-900 text-white px-8 py-4 rounded-xl font-black uppercase text-xs shadow-lg hover:shadow-blue-900/20 active:scale-95 transition-all"
             >
-              Confirmar y Firmar
+              Confirmar Firma
             </button>
           </div>
         </div>
