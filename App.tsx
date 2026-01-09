@@ -17,7 +17,7 @@ import {
 } from './components/EquipmentForms';
 import { QRScanner } from './components/QRScanner';
 import { TrendsDashboard } from './components/TrendsDashboard';
-import { SignaturePad } from './components/SignaturePad';
+// import { SignaturePad } from './components/SignaturePad'; // Removed
 import { GuardStatus } from './components/GuardStatus';
 import { AdminLists } from './components/AdminLists';
 import { EquipmentHoursView } from './components/EquipmentHoursView';
@@ -25,6 +25,7 @@ import { AppGuide } from './components/AppGuide';
 import { generateFormalPDF, exportDetailedCSV } from './services/reportService';
 import { initDriveApi, uploadToDrive, performMasterSync } from './services/driveService';
 import { saveToStorage, loadFromStorage, removeFromStorage } from './services/storageService';
+import { parseAndRecoverCSV } from './services/recoveryService';
 
 const getNavalGuardRange = () => {
   const now = new Date();
@@ -128,6 +129,23 @@ const App: React.FC = () => {
 
     return () => clearInterval(timer);
   }, [rounds, staffLists]);
+
+  // RESTORE CONFIRMATION FLAG from FS to LS (Fix for Android Persistence)
+  useEffect(() => {
+    const checkConfirmation = async () => {
+        if (!user) return;
+        const key = `hours_confirmed_${sessionData.guardStart.split('T')[0]}_${user.specialty}`;
+        const fromFS = await loadFromStorage<string>(key); // Returns JSON parsed, "true" string?
+        // loadFromStorage parses JSON. If we saved 'true' (string), verify what json stringify did. 
+        // saveToStorage(..., 'true') -> JSON.stringify('true') -> '"true"'.
+        // loadFromStorage -> JSON.parse('"true"') -> 'true'.
+        
+        if (fromFS === 'true') {
+            localStorage.setItem(key, 'true');
+        }
+    };
+    checkConfirmation();
+  }, [user, sessionData.guardStart]);
 
   const triggerMasterSync = async (showAlerts = false, overrideStaff?: UserSG[], overrideRounds?: RoundData[]) => {
     try {
@@ -472,7 +490,8 @@ const App: React.FC = () => {
         showHorometro,
         showTrim,
         previousRound,
-        previousTime: previousRound?.ronda_de_inspeccion
+        previousTime: previousRound?.ronda_de_inspeccion,
+        currentRoundTime: sessionData.ronda_de_inspeccion // New Prop for Virtual Meter Logic
     };
 
     switch(currentRound.equipo_principal) {
@@ -682,7 +701,9 @@ const App: React.FC = () => {
           guardDate={sessionData.guardStart.split('T')[0]}
           onConfirmed={() => {
             const guardDay = sessionData.guardStart.split('T')[0];
-            saveToStorage(`hours_confirmed_${guardDay}_${user?.specialty}`, 'true');
+            const key = `hours_confirmed_${guardDay}_${user?.specialty}`;
+            saveToStorage(key, 'true');
+            localStorage.setItem(key, 'true'); // Critical for sync check in GuardStatus
             alert("Reporte de horas confirmado para su división.");
             setActiveView(View.GUARD_STATUS);
           }}
@@ -836,10 +857,52 @@ const App: React.FC = () => {
                       </button>
                     </div>
                 </div>
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Información de Origen</p>
-                    <code className="text-[9px] font-bold text-blue-600 break-all">{currentOrigin}</code>
+                
+                <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100">
+                    <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-3">Recuperación de Datos</p>
+                    <div className="flex flex-col gap-2">
+                        <label className="w-full bg-amber-500 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 transition-all text-center cursor-pointer">
+                            📂 Restaurar desde CSV
+                             <input 
+                                type="file" 
+                                accept=".csv,text/csv,application/vnd.ms-excel,text/plain"
+                                className="hidden"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+
+                                    if (!window.confirm("⚠️ ¿Desea restaurar registros desde este archivo CSV?\n\nEsta acción agregará las rondas faltantes combinándolas con su base de datos actual.")) {
+                                        return;
+                                    }
+
+                                    const reader = new FileReader();
+                                    reader.onload = async (evt) => {
+                                        const content = evt.target?.result as string;
+                                        if (content) {
+                                            try {
+                                                const result = await parseAndRecoverCSV(content);
+                                                alert(`✅ Proceso Finalizado.\n\nRondas Recuperadas: ${result.success}\nErrores/Saltadas: ${result.failed}\nTotal Procesado: ${result.total}`);
+                                                // Reload app state
+                                                window.location.reload(); 
+                                            } catch (err: any) {
+                                                alert("❌ Error al procesar CSV: " + err.message);
+                                            }
+                                        }
+                                    };
+                                    reader.readAsText(file);
+                                }} 
+                             />
+                        </label>
+                         <p className="text-[9px] text-amber-700 font-bold leading-tight mt-1 opacity-70">
+                            Use esta opción si perdió datos por fallo de sincronización y tiene un respaldo CSV.
+                         </p>
+                    </div>
                 </div>
+            </div>
+
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Información de Origen</p>
+                <code className="text-[9px] font-bold text-blue-600 break-all">{currentOrigin}</code>
             </div>
 
             <button onClick={() => setActiveView(View.DASHBOARD)} className="w-full text-slate-400 font-bold text-xs uppercase hover:text-navy transition-colors">Volver al Dashboard</button>
@@ -991,20 +1054,17 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-black text-navy uppercase mb-4 tracking-tighter">Parámetros Validados</h2>
             <p className="text-sm text-slate-500 mb-10 font-medium">Los datos se encuentran dentro de los rangos operacionales normales.</p>
             <button onClick={() => {
-              if (currentRound.UNIQUE_KEY) {
-                // Si es corrección, no requerimos firma nueva si ya tiene una, pero auditamos
-                finalizeSaveWithSignature(currentRound.signature || "");
-              } else {
-                setActiveView(View.SIGNATURE);
-              }
+              // Simplemente guardamos con una firma generada automáticamente o vacía
+              // Ya no requerimos el garabato manual
+              finalizeSaveWithSignature(currentRound.signature || "Digital_Check");
             }} className="w-full bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase shadow-xl tracking-widest hover:scale-[1.02] transition-all">
-              {currentRound.UNIQUE_KEY ? 'Aplicar Corrección Auditada' : 'Certificar con Firma'}
+              {currentRound.UNIQUE_KEY ? 'Aplicar Corrección Auditada' : 'Guardar y Finalizar'}
             </button>
             <button onClick={() => setActiveView(View.EQUIPMENT_LOGGING)} className="w-full mt-6 text-slate-400 font-bold text-xs uppercase tracking-widest">Corregir Lecturas</button>
         </div>
       )}
 
-      {activeView === View.SIGNATURE && <SignaturePad onSave={finalizeSaveWithSignature} onCancel={() => setActiveView(View.ANALYSIS)} />}
+      {/* SignaturePad removed per user request */}
       
       {activeView === View.QR_SCAN && <QRScanner onScan={(txt) => {
           const parts = txt.trim().split(':');

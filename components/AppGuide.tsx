@@ -86,39 +86,50 @@ export const AppGuide: React.FC<AppGuideProps> = ({ onBack }) => {
         {activeTab === 'horas' && (
           <section className="animate-in slide-in-from-right-4">
             <h3 className="text-xl font-black text-navy uppercase mb-4">Reporte de Horas Diarias</h3>
+            
+            <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100 mb-8">
+               <h4 className="text-sm font-black text-navy uppercase mb-3">Ejemplo Práctico de Cálculo</h4>
+               <div className="space-y-4 text-xs text-slate-700 font-medium leading-relaxed">
+                  <div className="flex gap-3">
+                     <span className="font-bold text-blue-600">Paso 1:</span>
+                     <p>
+                       <strong>Ronda de Inicio (09:00 AM)</strong>. Haces tu primera ronda del día a las 9 de la mañana. Vas al Generador 1 y miras el horómetro.
+                       <br/><span className="italic opacity-80">👀 Lectura: 4,164.0 h | 📲 App: Ingresas 4,164.0 en la ronda 09:00.</span>
+                     </p>
+                  </div>
+                  <div className="flex gap-3">
+                     <span className="font-bold text-blue-600">Paso 2:</span>
+                     <p>
+                       <strong>Operación Normal</strong>. El generador se queda prendido todo el día y toda la noche generando energía.
+                     </p>
+                  </div>
+                  <div className="flex gap-3">
+                     <span className="font-bold text-blue-600">Paso 3:</span>
+                     <p>
+                       <strong>Ronda de Cierre (08:00 AM - Día Siguiente)</strong>. Al día siguiente (ej. 7 Enero), antes de entregar guardia, haces la última ronda a las 8 AM.
+                       <br/><span className="italic opacity-80">👀 Lectura: 4,188.0 h | 📲 App: Ingresas 4,188.0 en la ronda 08:00.</span>
+                     </p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl border border-blue-200 mt-2">
+                     <p className="font-black text-navy uppercase text-[10px] mb-1">🧮 Cálculo Automático del Sistema</p>
+                     <p className="font-mono text-blue-800">
+                       4,188.0 (Final) - 4,164.0 (Inicial) = <span className="font-bold bg-yellow-100 px-1">24.0 Horas Trabajadas</span>
+                     </p>
+                     <p className="mt-2 text-[10px] opacity-70">
+                       Nota: Si apagas el equipo 2 horas (ej. 20:00 a 22:00), el horómetro se detendrá. La resta final será: 4,186.0 - 4,164.0 = 22.0 Horas. El sistema es exacto porque usa la acumulación real del reloj.
+                     </p>
+                  </div>
+               </div>
+            </div>
+
             <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-3xl mb-8 flex items-start gap-4">
                <span className="text-3xl">⚠️</span>
                <div>
                   <h4 className="text-sm font-black text-amber-900 uppercase">Bloqueo Operativo</h4>
                   <p className="text-xs text-amber-800 font-bold mt-1">
-                    Es obligatorio cerrar el reporte de horas a las 09:00 AM para habilitar la guardia. El sistema no permitirá ingresar parámetros de la nueva guardia hasta que se confirmen los horómetros de la guardia saliente.
+                    Es obligatorio cerrar y confirmar el reporte de horas a las 09:00 AM para habilitar la guardia del día.
                   </p>
                </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-white border border-slate-200 p-6 rounded-3xl">
-                <h4 className="text-[10px] font-black text-navy uppercase mb-3">Verificaciones</h4>
-                <ul className="space-y-2">
-                  <li className="text-xs text-slate-600 font-bold flex gap-2">
-                    <span className="text-emerald-500">✓</span> Comparar con el Libro de Máquinas físico.
-                  </li>
-                  <li className="text-xs text-slate-600 font-bold flex gap-2">
-                    <span className="text-emerald-500">✓</span> Comparar con el Parte Diario de la unidad.
-                  </li>
-                  <li className="text-xs text-slate-600 font-bold flex gap-2">
-                    <span className="text-emerald-500">✓</span> El valor diario no debe superar las 24.5 horas.
-                  </li>
-                  <li className="text-xs text-slate-600 font-bold flex gap-2">
-                    <span className="text-emerald-500">✓</span> Asegurar que los horómetros de los Generadores coincidan con el tablero local.
-                  </li>
-                </ul>
-              </div>
-              <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl">
-                 <h4 className="text-[10px] font-black text-blue-400 uppercase mb-2">Cálculo Automático</h4>
-                 <p className="text-xs font-medium opacity-90 leading-relaxed">
-                   El sistema calcula automáticamente las horas trabajadas restando el valor de las 09:00 AM del valor actual. Este dato se exporta a la base de datos central para indicadores de mantenimiento.
-                 </p>
-              </div>
             </div>
           </section>
         )}

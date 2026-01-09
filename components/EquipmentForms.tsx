@@ -10,6 +10,7 @@ interface FormProps {
   showTrim?: boolean;
   previousRound?: RoundData | null;
   previousTime?: string;
+  currentRoundTime?: string;
 }
 
 const Field: React.FC<{ 
@@ -28,7 +29,8 @@ const Field: React.FC<{
   previousTime?: string;
   placeholder?: string;
   disabled?: boolean;
-}> = ({ label, name, type = "number", step = "0.01", min, max, minOpt, maxOpt, value, onChange, required, previousValue, previousTime, placeholder, disabled }) => {
+  valueClassName?: string;
+}> = ({ label, name, type = "number", step = "0.01", min, max, minOpt, maxOpt, value, onChange, required, previousValue, previousTime, placeholder, disabled, valueClassName }) => {
   
   const numValue = parseFloat(value);
   const numPrev = parseFloat(previousValue);
@@ -85,7 +87,8 @@ const Field: React.FC<{
         required={required}
         placeholder={placeholder}
         disabled={disabled}
-        className={`border rounded-lg px-3 py-1.5 text-sm outline-none transition-all ${getStatusClasses()}`}
+
+        className={`border rounded-lg px-3 py-1.5 text-sm outline-none transition-all ${getStatusClasses()} ${valueClassName || ''}`}
       />
     </div>
   );
@@ -110,47 +113,69 @@ const ObservationsField: React.FC<{ value: string; onChange: any }> = ({ value, 
   </div>
 );
 
-const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound, previousTime, showHorometro, showTrim }) => {
-  // console.log("[SpecialFieldsInput] Init", { type: data.equipo_principal, horometro: data.horometro });
-
-  // Helper to detect if we should use "Hours Worked" mode
-  // Conditions: 
-  // 1. Equipment is Frigorificos or Manejadoras
-  // 2. We are in the 08:00 context (implied by showHorometro=true and previousTime='09:00')
-  // 3. We have a valid previous reading
-  
-  const targetEquipment = data.equipo_principal === 'frigorificos' || data.equipo_principal === 'manejadoras_aire';
-  const is0800Context = showHorometro && previousTime === '09:00';
+const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound, previousTime, currentRoundTime, showHorometro, showTrim }) => {
+  // === LOGICA HORÓMETRO VIRTUAL (Manjadoras / Frigorificos) ===
+  const isVirtualMeterEquipment = data.equipo_principal === 'frigorificos' || data.equipo_principal === 'manejadoras_aire';
   const hasPrevious = previousRound && previousRound.horometro !== undefined && previousRound.horometro !== null;
+  const prevTotal = hasPrevious ? parseFloat(previousRound!.horometro as any) : 0;
+  
+  // Condición 1: Inicio de Guardia (09:00) -> Se DEBE copiar el corte anterior (que son las 08:00 del mismo día si vemos el reloj, pero viene del turno saliente)
+  // Nota: currentRoundTime viene de sessionData.ronda_de_inspeccion
+  const isStartOfGuard = currentRoundTime === '09:00';
+  const isEndOfGuard = currentRoundTime === '08:00';
 
-  const performHoursCalc = targetEquipment && is0800Context && hasPrevious;
+  // Si es un equipo virtual y estamos en 09:00, mostramos sugerencia de copia
+  const showVirtualCopy = isVirtualMeterEquipment && showHorometro && isStartOfGuard;
 
-  const handleHoursWorkedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const workedHours = parseFloat(e.target.value);
-    if (isNaN(workedHours)) {
-      // If empty/invalid, maybe just pass the value as is or 0? 
-      // Better to pass the raw calculate back if possible, but here we are mapping to Total.
-      // If user clears input, we might set it to previousRound.horometro (0 hours worked)
-      onChange({ target: { name: 'horometro', value: previousRound!.horometro } } as any);
+  // Si es un equipo virtual y estamos en 08:00 (Fin de Guardia), mostramos Input de Horas Trabajadas
+  const showVirtualWorkInput = isVirtualMeterEquipment && showHorometro && isEndOfGuard && hasPrevious;
+
+  // Cálculo para el modo Trabajo (08:00)
+  const currentTotal = parseFloat(data.horometro);
+  const derivedWorked = (!isNaN(currentTotal) && hasPrevious) ? (currentTotal - prevTotal) : 0;
+
+  // Estado Local para input de horas trabajadas (Solo modo 08:00)
+  const [localWorkedHours, setLocalWorkedHours] = React.useState<string>(
+    (Math.abs(derivedWorked) < 0.01) ? '' : derivedWorked.toFixed(1)
+  );
+
+  React.useEffect(() => {
+    if (showVirtualWorkInput) {
+       const localVal = parseFloat(localWorkedHours || '0');
+       if (Math.abs(localVal - derivedWorked) > 0.01) {
+          setLocalWorkedHours((Math.abs(derivedWorked) < 0.01) ? '' : derivedWorked.toFixed(1));
+       }
+    }
+  }, [currentTotal, prevTotal, showVirtualWorkInput]);
+
+  const handleVirtualWorkedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setLocalWorkedHours(val);
+    const workedHours = parseFloat(val);
+    
+    if (val === '' || isNaN(workedHours)) {
+      onChange({ target: { name: 'horometro', value: previousRound!.horometro } } as any); // Reset to prev
       return;
     }
-    const newTotal = (parseFloat(previousRound!.horometro as any) + workedHours).toFixed(1);
+    const newTotal = (prevTotal + workedHours).toFixed(1);
     onChange({ target: { name: 'horometro', value: newTotal } } as any);
   };
 
-  // Calculate displayed "Hours Worked"
-  const currentTotal = parseFloat(data.horometro);
-  const prevTotal = hasPrevious ? parseFloat(previousRound!.horometro as any) : 0;
-  const displayedHoursWorked = !isNaN(currentTotal) && !isNaN(prevTotal) ? (currentTotal - prevTotal).toFixed(1) : '';
+  const handleCopyPrevious = () => {
+    if (hasPrevious) {
+        onChange({ target: { name: 'horometro', value: previousRound!.horometro } } as any);
+    }
+  };
 
   return (
     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 shadow-inner space-y-4">
       {showHorometro && (
         <>
-          {performHoursCalc ? (
+           {/* CASO 1: FIN DE GUARDIA (08:00) -> Input de Horas Trabajadas */}
+           {showVirtualWorkInput ? (
              <div className="flex flex-col gap-1">
                <div className="flex justify-between items-center">
-                 <label className="text-[11px] font-bold text-blue-700 uppercase tracking-tight">Horas Trabajadas Hoy*</label>
+                 <label className="text-[11px] font-bold text-blue-700 uppercase tracking-tight">Horas Trabajadas Hoy (Virtual)*</label>
                  <span className="text-[9px] text-slate-400 font-medium">
                    Ant: <span className="text-blue-600 font-bold">{prevTotal}</span>
                  </span>
@@ -160,29 +185,59 @@ const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound
                  step="0.1"
                  min="0"
                  max="24"
-                 placeholder="Ej: 15"
-                 value={displayedHoursWorked}
-                 onChange={handleHoursWorkedChange}
+                 placeholder="Ej: 24"
+                 value={localWorkedHours}
+                 onChange={handleVirtualWorkedChange}
                  className="border rounded-lg px-3 py-1.5 text-sm outline-none transition-all border-blue-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 bg-white font-bold text-navy"
                  required
                />
                <p className="text-[9px] text-slate-400 text-right">
-                 Total Acumulado: <strong>{data.horometro || prevTotal}</strong>
+                 Total Acumulado: <strong>{isNaN(parseFloat(data.horometro)) ? prevTotal : data.horometro}</strong>
                </p>
              </div>
-          ) : (
-            <Field 
-              label="Horas de Operación (Horómetro)" 
-              name="horometro" 
-              type="number" 
-              step="0.1" 
-              value={data.horometro} 
-              onChange={onChange} 
-              previousValue={previousRound?.horometro}
-              previousTime={previousTime}
-              required 
-            />
-          )}
+           ) : showVirtualCopy ? (
+             /* CASO 2: INICIO DE GUARDIA (09:00) -> Sugerir Copia */
+             <div className="flex flex-col gap-2">
+                 <Field 
+                   label="Horas Totales (Virtual) - Inicio Guardia" 
+                   name="horometro" 
+                   type="number" 
+                   step="0.1" 
+                   value={data.horometro} 
+                   onChange={onChange}
+                   previousValue={previousRound?.horometro} 
+                   previousTime={previousTime}
+                   required 
+                   placeholder="Debe ser igual al cierre anterior"
+                   valueClassName="font-bold text-blue-800"
+                 />
+                 {hasPrevious && Math.abs(parseFloat(data.horometro) - prevTotal) > 0.1 && (
+                     <button 
+                       type="button" 
+                       onClick={handleCopyPrevious}
+                       className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-[10px] font-bold uppercase py-2 px-3 rounded-lg transition-colors border border-blue-200"
+                     >
+                        ⬇️ Copiar Horas del Cierre Anterior ({prevTotal})
+                     </button>
+                 )}
+                 <p className="text-[9px] text-slate-400 italic">
+                    Al iniciar guardia (09:00), el total debe coincidir con el cierre de las 08:00.
+                 </p>
+             </div>
+           ) : (
+             /* CASO DEFAULT (Generadores, etc. O cualquier hora intermedia) */
+             <Field 
+               label={isVirtualMeterEquipment ? "Horas Totales (Virtual)" : "Horas de Operación (Horómetro)"}
+               name="horometro" 
+               type="number" 
+               step="0.1" 
+               value={data.horometro} 
+               onChange={onChange} 
+               previousValue={previousRound?.horometro}
+               previousTime={previousTime}
+               required 
+             />
+           )}
         </>
       )}
       {showTrim && (
@@ -203,9 +258,9 @@ const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound
   );
 };
 
-export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime }) => (
+export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} showTrim={showTrim} />}
+    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -260,9 +315,9 @@ export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
   </div>
 );
 
-export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime }) => (
+export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} showTrim={showTrim} />}
+    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -307,9 +362,9 @@ export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
   </div>
 );
 
-export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -386,9 +441,9 @@ export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, pr
   </div>
 );
 
-export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -453,9 +508,9 @@ export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHoro
   </div>
 );
 
-export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <Field label="P. Entrega (kPa)" name="presion_entrega_pur" min="0" value={data.presion_entrega_pur} previousValue={previousRound?.presion_entrega_pur} previousTime={previousTime} onChange={onChange} required />
@@ -477,9 +532,9 @@ export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorom
   </div>
 );
 
-export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-2 gap-3">
       <select name="ruido_separadora_deoiler" value={data.ruido_separadora_deoiler || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white">
@@ -504,9 +559,9 @@ export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro
   </div>
 );
 
-export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -542,9 +597,9 @@ export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorom
   </div>
 );
 
-export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <Field label="Vel. Motor (RPM)" name="velocidad_motor_bt" min="0" max="3600" step="1" value={data.velocidad_motor_bt} previousValue={previousRound?.velocidad_motor_bt} previousTime={previousTime} onChange={onChange} required />
@@ -565,9 +620,9 @@ export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorom
   </div>
 );
 
-export const EngranajesForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const EngranajesForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -602,9 +657,9 @@ export const EngranajesForm: React.FC<FormProps> = ({ data, onChange, showHorome
   </div>
 );
 
-export const DesalinizadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const DesalinizadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
@@ -643,9 +698,9 @@ export const DesalinizadorasForm: React.FC<FormProps> = ({ data, onChange, showH
   </div>
 );
 
-export const AireComprimidoForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime }) => (
+export const AireComprimidoForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -674,9 +729,9 @@ export const AireComprimidoForm: React.FC<FormProps> = ({ data, onChange, showHo
   </div>
 );
 
-export const GenericEquipmentForm: React.FC<FormProps & { type: EquipmentType }> = ({ data, onChange, type, showHorometro, previousRound, previousTime }) => (
+export const GenericEquipmentForm: React.FC<FormProps & { type: EquipmentType }> = ({ data, onChange, type, showHorometro, previousRound, previousTime, currentRoundTime }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     <p className="text-sm text-slate-500 italic">Ingrese parámetros para {type}.</p>
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
        <Field label="Parámetro Principal" name="p1" value={data.p1} previousValue={previousRound?.p1} previousTime={previousTime} onChange={onChange} required />
