@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, UserSG, RoundData, StaffLists, EquipmentType, UserRole, UserSpecialty, AuditLog } from './types';
 import { Layout } from './components/Layout';
 import { 
@@ -22,6 +22,7 @@ import { GuardStatus } from './components/GuardStatus';
 import { AdminLists } from './components/AdminLists';
 import { EquipmentHoursView } from './components/EquipmentHoursView';
 import { AppGuide } from './components/AppGuide';
+import { SettingsPage } from './components/SettingsPage';
 import { generateFormalPDF, exportDetailedCSV } from './services/reportService';
 import { initDriveApi, uploadToDrive, performMasterSync } from './services/driveService';
 import { saveToStorage, loadFromStorage, removeFromStorage } from './services/storageService';
@@ -86,6 +87,23 @@ const App: React.FC = () => {
 
   const [currentRound, setCurrentRound] = useState<Partial<RoundData>>({ on_off: 'y' });
   const [selectedExportTypes, setSelectedExportTypes] = useState<string[]>([]);
+  
+  // CUSTOM DROPDOWN STATE
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [selectedUserValue, setSelectedUserValue] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     setCurrentOrigin(window.location.origin);
@@ -104,31 +122,38 @@ const App: React.FC = () => {
             if (storedRounds) setRounds(storedRounds);
             
             initDriveApi().then(() => {
-                // Al iniciar, sincronizamos de inmediato si hay red
-                triggerMasterSync(false); 
+                console.log("Drive API Initialized");
             }).catch(err => console.error("Error Drive Init:", err));
         } catch(e) {
             console.error("App Init Error:", e);
         }
     };
     initApp();
+    
+    // DELAYED SYNC: Wait 5s before first sync to allow UI to settle
+    const initialSyncTimer = setTimeout(() => {
+        console.log("[Auto-Sync] Ejecutando sincronización inicial diferida...");
+        triggerMasterSync(false);
+    }, 5000);
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(() => {
         setIsOfflineReady(true);
       });
     }
+    
+    return () => clearTimeout(initialSyncTimer);
   }, []);
 
-  // EFECTO DE AUTO-SINCRONIZACIÓN CADA 2 MINUTOS
+  // EFECTO DE AUTO-SINCRONIZACIÓN CADA 5 MINUTOS (Optimizado para no saturar PC)
   useEffect(() => {
     const timer = setInterval(() => {
         console.log("[Auto-Sync] Sincronizando en segundo plano...");
-        triggerMasterSync(false); // false = Silencioso, no muestra alertas
-    }, 120000); 
+        triggerMasterSync(false); 
+    }, 300000); // 5 minutos
 
     return () => clearInterval(timer);
-  }, [rounds, staffLists]);
+  }, []);
 
   // RESTORE CONFIRMATION FLAG from FS to LS (Fix for Android Persistence)
   useEffect(() => {
@@ -161,7 +186,7 @@ const App: React.FC = () => {
         });
         
         const staffToSend = overrideStaff || staffLists.sg;
-        const masterData = await performMasterSync(sanitizedRounds, staffToSend);
+        const masterData = await performMasterSync(sanitizedRounds, staffToSend, !showAlerts);
 // ...
 
   const handleDeleteRound = () => {
@@ -521,69 +546,154 @@ const App: React.FC = () => {
     >
       
       {activeView === View.LOGIN && (
-        <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-xl border border-slate-200 animate-in fade-in zoom-in duration-500">
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-20 h-20 bg-navy rounded-2xl flex items-center justify-center shadow-lg mb-4">
-               <span className="text-white font-black text-2xl">SB</span>
-            </div>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight text-center">Acceso Ingeniería</h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">ARC Simón Bolívar</p>
-          </div>
-          
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const formData = new FormData(e.currentTarget);
-            const gradeName = formData.get('gradeName') as string;
-            const password = formData.get('password') as string;
-            
-            if (gradeName === "ADMIN 1" && password === "arcadmin_1") {
-                const adminUser: UserSG = { grade: 'ADMIN', name: '1', role: UserRole.CHIEF_ENGINEER, specialty: UserSpecialty.ALL };
-                setUser(adminUser);
-                saveToStorage(LOGGED_USER_KEY, adminUser);
-                setActiveView(View.DASHBOARD);
-            } else {
-                const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password && !u.isDeleted);
-                if (found) {
-                  const finalUser = { ...found };
-                  if (finalUser.role === UserRole.CHIEF_ENGINEER || finalUser.role === UserRole.CHIEF_GUARD) {
-                    finalUser.specialty = UserSpecialty.ALL;
-                  }
-                  setUser(finalUser);
-                  saveToStorage(LOGGED_USER_KEY, finalUser);
-                  setActiveView(View.DASHBOARD);
-                } else { 
-                  alert("Usuario o contraseña incorrectos."); 
-                }
-            }
-          }} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Personal de Guardia</label>
-              <select name="gradeName" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold outline-none focus:border-navy transition-all" required>
-                <option value="">Seleccione...</option>
-                <option value="ADMIN 1">ADMINISTRADOR (DEMO)</option>
-                {staffLists.sg.filter(u => !u.isDeleted).map((u, i) => <option key={i} value={`${u.grade} ${u.name}`}>{u.grade} {u.name} ({u.specialty === UserSpecialty.PROPULSION ? 'Mot' : 'Ele'})</option>)}
-              </select>
-            </div>
-            
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Contraseña</label>
-              <input name="password" type="password" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold outline-none focus:border-navy transition-all" placeholder="••••••••" required />
-            </div>
+        <div className="flex h-screen w-full bg-white overflow-hidden">
+             {/* LEFT PANEL - BRANDING (Visible on Desktop) */}
+             <div className="hidden lg:flex w-7/12 bg-slate-900 relative flex-col justify-between p-12 text-white">
+                <div className="absolute inset-0 bg-[url('/bg.jpg')] bg-cover opacity-20 mix-blend-overlay"></div>
+                <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 opacity-90"></div>
+                
+                <div className="relative z-10">
+                   <div className="flex items-center gap-3 mb-8">
+                      <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
+                         <span className="font-black text-sm tracking-tighter">ARC</span>
+                      </div>
+                      <span className="font-bold tracking-widest text-xs opacity-60">ARMADA DE COLOMBIA</span>
+                   </div>
+                   <h1 className="text-5xl font-black leading-tight mb-4">
+                      S.G. Ingeniería<br/><span className="text-blue-400">ARC Simón Bolívar</span>
+                   </h1>
+                   <p className="text-lg text-slate-300 max-w-md leading-relaxed">
+                      Sistema integrado para el control de rondas, monitoreo de equipos y gestión de ingeniería naval.
+                   </p>
+                </div>
 
-            <button type="submit" className="w-full bg-navy text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all mt-4">
-              Ingresar al Sistema
-            </button>
-          </form>
+                <div className="relative z-10 text-xs text-slate-500 font-mono">
+                   v2.0.0 (Production) • Depto. Ingeniería
+                </div>
+             </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">¿No está registrado?</p>
-            <button 
-              onClick={() => setActiveView(View.REGISTER_SG)}
-              className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest"
-            >
-              Registrar Nuevo Personal
-            </button>
-          </div>
+             {/* RIGHT PANEL - LOGIN FORM */}
+             <div className="w-full lg:w-5/12 flex flex-col justify-center items-center p-8 lg:p-16 relative bg-slate-50">
+                <div className="absolute top-4 right-4 animate-in fade-in delay-200">
+                    <button
+                        onClick={() => setActiveView(View.SETTINGS)}
+                        className="p-3 bg-white text-slate-400 rounded-full hover:bg-slate-100 hover:text-navy transition-all shadow-sm border border-slate-100"
+                        title="Configuración de Conexión"
+                    >
+                        ⚙️
+                    </button>
+                </div>
+
+                <div className="w-full max-w-sm">
+                    <div className="text-center mb-10">
+                        <div className="w-20 h-20 bg-[#003366] rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/20 mx-auto mb-6">
+                           <span className="text-white font-black text-2xl">SB</span>
+                        </div>
+                        <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">Bienvenido a Bordo</h2>
+                        <p className="text-slate-400 text-sm font-medium">Inicie sesión para comenzar su guardia</p>
+                    </div>
+
+                    <form onSubmit={(e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.currentTarget);
+                        const gradeName = formData.get('gradeName') as string;
+                        const password = formData.get('password') as string;
+                        
+                        if (gradeName === "ADMIN 1" && password === "arcadmin_1") {
+                            const adminUser: UserSG = { grade: 'ADMIN', name: '1', role: UserRole.CHIEF_ENGINEER, specialty: UserSpecialty.ALL };
+                            setUser(adminUser);
+                            saveToStorage(LOGGED_USER_KEY, adminUser);
+                            setActiveView(View.DASHBOARD);
+                        } else {
+                            const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password && !u.isDeleted);
+                            if (found) {
+                            const finalUser = { ...found };
+                            if (finalUser.role === UserRole.CHIEF_ENGINEER || finalUser.role === UserRole.CHIEF_GUARD) {
+                                finalUser.specialty = UserSpecialty.ALL;
+                            }
+                            setUser(finalUser);
+                            saveToStorage(LOGGED_USER_KEY, finalUser);
+                            setActiveView(View.DASHBOARD);
+                            } else { 
+                            alert("Usuario o contraseña incorrectos."); 
+                            }
+                        }
+                    }} className="space-y-5">
+                        <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">Personal de Guardia</label>
+                        <div className="relative" ref={dropdownRef}>
+                            <input type="hidden" name="gradeName" value={selectedUserValue} required />
+                            <div 
+                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                className={`w-full border border-slate-200 rounded-xl px-4 py-3.5 bg-white font-bold outline-none ring-offset-0 focus:ring-4 focus:ring-blue-500/10 transition-all flex justify-between items-center cursor-pointer hover:border-slate-300 select-none ${isDropdownOpen ? 'border-blue-500 ring-4 ring-blue-500/10' : ''}`}
+                            >
+                                <span className={!selectedUserValue ? "text-slate-400 font-normal" : "text-slate-700"}>
+                                    {selectedUserValue || "Seleccione su usuario..."}
+                                </span>
+                                <span className={`text-slate-400 text-xs transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
+                            </div>
+
+                            {isDropdownOpen && (
+                                <div className="absolute z-50 top-full mt-2 left-0 w-full bg-white rounded-xl shadow-xl border border-slate-100 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                                    <div 
+                                        className="px-4 py-3 hover:bg-slate-50 cursor-pointer font-bold text-slate-700 border-b border-slate-50 flex items-center gap-2"
+                                        onClick={() => {
+                                            setSelectedUserValue("ADMIN 1");
+                                            setIsDropdownOpen(false);
+                                            requestAnimationFrame(() => document.getElementById('login-password')?.focus());
+                                        }}
+                                    >
+                                        <span>ADMINISTRADOR (DEMO)</span>
+                                    </div>
+                                    {staffLists.sg.filter(u => !u.isDeleted).map((u, i) => (
+                                        <div 
+                                            key={i}
+                                            className="px-4 py-3 hover:bg-blue-50 hover:text-blue-700 cursor-pointer text-slate-600 font-medium transition-colors border-b border-slate-50 last:border-0 flex items-center justify-between group"
+                                            onClick={() => {
+                                                setSelectedUserValue(`${u.grade} ${u.name}`);
+                                                setIsDropdownOpen(false);
+                                                requestAnimationFrame(() => document.getElementById('login-password')?.focus());
+                                            }}
+                                        >
+                                            <span className="font-bold group-hover:translate-x-1 transition-transform">{u.grade} {u.name}</span>
+                                            <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 bg-slate-100 px-2 py-0.5 rounded-md group-hover:bg-blue-100 group-hover:text-blue-800 transition-colors">
+                                                {u.specialty === UserSpecialty.PROPULSION ? 'MOTOR' : 'ELEC'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">Contraseña</label>
+                            <input 
+                                id="login-password"
+                                name="password" 
+                                type="password" 
+                                className="w-full border border-slate-200 rounded-xl px-4 py-3.5 bg-white font-bold outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all placeholder:text-slate-300" 
+                                placeholder="••••••••" 
+                                required 
+                            />
+                        </div>
+
+                        <button type="submit" className="w-full bg-[#003366] text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-blue-900/20 active:scale-95 transition-all hover:bg-blue-900 mt-2">
+                        Ingresar al Sistema
+                        </button>
+                    </form>
+
+                    <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+                        <button 
+                        onClick={() => setActiveView(View.REGISTER_SG)}
+                        className="text-slate-400 hover:text-[#003366] font-bold uppercase text-[10px] tracking-widest transition-colors flex items-center justify-center gap-2 mx-auto group"
+                        >
+                        <span>Registrar Nuevo Personal</span>
+                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                        </button>
+                    </div>
+                </div>
+             </div>
         </div>
       )}
 
@@ -1079,6 +1189,18 @@ const App: React.FC = () => {
           }
       }} onClose={() => setActiveView(View.DASHBOARD)} />}
       
+      {activeView === View.APP_GUIDE && <AppGuide />}
+      
+      {activeView === View.SETTINGS && (
+        <SettingsPage onBackendChange={() => {
+            console.log("Modo de sincronización cambiado.");
+            if (!user) {
+                // If not logged in, force back to Login to prevent orphaned state
+                setActiveView(View.LOGIN); 
+            }
+        }} />
+      )}
+
       {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds.filter(r => !r.isDeleted)} user={user!} condicion={sessionData.condicion} onBack={() => setActiveView(View.DASHBOARD)} />}
     </Layout>
   );

@@ -26,6 +26,7 @@ const SPECIALTY_LABELS: Record<UserSpecialty, string> = {
 
 export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, user, onLogout, canLogout }) => {
   const showNav = ![View.LOGIN, View.REGISTER_SG].includes(activeView);
+  const showMenu = showNav && user; // Only show menu buttons if user is logged in
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
@@ -43,34 +44,56 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, u
             </div>
             
             <div className="flex items-center gap-2 md:gap-6">
-              <div className="text-right hidden sm:block border-r border-white/20 pr-4">
-                <p className="text-[10px] uppercase font-black opacity-75 tracking-widest leading-none mb-1">
-                  {user ? `${ROLE_LABELS[user.role]} - ${SPECIALTY_LABELS[user.specialty]}` : 'Usuario'}
-                </p>
-                <p className="text-sm font-semibold leading-none">{user?.grade} {user?.name}</p>
-              </div>
+              {showMenu && (
+                <div className="text-right hidden sm:block border-r border-white/20 pr-4">
+                  <p className="text-[10px] uppercase font-black opacity-75 tracking-widest leading-none mb-1">
+                    {user ? `${ROLE_LABELS[user.role]} - ${SPECIALTY_LABELS[user.specialty]}` : 'Usuario'}
+                  </p>
+                  <p className="text-sm font-semibold leading-none">{user?.grade} {user?.name}</p>
+                </div>
+              )}
               
               <div className="flex items-center gap-2 pr-safe">
-                <button 
-                  onClick={() => setView(View.DASHBOARD)}
-                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-md uppercase tracking-wider"
-                >
-                  Menú
-                </button>
-                <button 
-                  onClick={onLogout}
-                  title="Cambiar Usuario / Cerrar Sesión"
-                  className="p-2 rounded-lg transition-all group hover:bg-white/10"
-                >
-                  <span className="text-xl transition-transform inline-block group-hover:scale-110">🚪</span>
-                </button>
+                {showMenu && (
+                    <>
+                    <button 
+                    onClick={() => setView(View.DASHBOARD)}
+                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-md uppercase tracking-wider"
+                    >
+                    Menú
+                    </button>
+                    <button 
+                    onClick={() => setView(View.SETTINGS)}
+                    className="bg-slate-700 hover:bg-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-md uppercase tracking-wider text-white"
+                    title="Configuración"
+                    >
+                    ⚙️
+                    </button>
+                    <button 
+                    onClick={onLogout}
+                    title="Cambiar Usuario / Cerrar Sesión"
+                    className="p-2 rounded-lg transition-all group hover:bg-white/10"
+                    >
+                    <span className="text-xl transition-transform inline-block group-hover:scale-110">🚪</span>
+                    </button>
+                    </>
+                )}
+                
+                {!showMenu && activeView === View.SETTINGS && (
+                    <button 
+                    onClick={() => setView(View.LOGIN)}
+                    className="bg-slate-700 hover:bg-slate-800 px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-md uppercase tracking-wider text-white"
+                    >
+                    Volver al Login
+                    </button>
+                )}
               </div>
             </div>
           </div>
         </header>
       )}
 
-      <main className="flex-1 container mx-auto px-4 py-8 max-w-5xl pl-safe pr-safe pb-safe">
+      <main className={`flex-1 container mx-auto px-4 py-8 max-w-5xl pl-safe pr-safe pb-safe ${activeView === View.LOGIN ? 'flex items-start justify-center pt-24' : ''}`}>
         {children}
       </main>
 

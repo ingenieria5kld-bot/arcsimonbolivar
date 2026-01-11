@@ -79,8 +79,7 @@ const Field: React.FC<{
         name={name}
         type={type}
         step={step}
-        min={min}
-        max={max}
+        // Removed min/max from DOM to allow free typing (visual validation remains)
         value={value || ''}
         onChange={onChange}
         onBlur={handleBlur}
@@ -89,6 +88,7 @@ const Field: React.FC<{
         disabled={disabled}
 
         className={`border rounded-lg px-3 py-1.5 text-sm outline-none transition-all ${getStatusClasses()} ${valueClassName || ''}`}
+        onWheel={(e) => e.currentTarget.blur()}
       />
     </div>
   );
@@ -262,7 +262,7 @@ export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
   <div className="space-y-4">
     {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} />}
     
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Unidad de Generación*</label>
         <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -319,7 +319,7 @@ export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
   <div className="space-y-4">
     {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} />}
     
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Motor Propulsor*</label>
         <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -331,7 +331,7 @@ export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
     </div>
 
     <SectionHeader title="Parámetros Motor Propulsor" />
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
       <Field label="Consumo (L/h)" name="consumo_p" min="0" max="1000" value={data.consumo_p} previousValue={previousRound?.consumo_p} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Agua Camisas (kPa)" name="pres_agua_camisas_p" min="0" max="300" value={data.pres_agua_camisas_p} previousValue={previousRound?.pres_agua_camisas_p} previousTime={previousTime} onChange={onChange} required />
       <Field label="T. Refrig. LT (°C)" name="temp_refrigerante_lt_p" min="0" max="120" value={data.temp_refrigerante_lt_p} previousValue={previousRound?.temp_refrigerante_lt_p} previousTime={previousTime} onChange={onChange} required />
@@ -351,7 +351,7 @@ export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
     </div>
 
     <SectionHeader title="Agua de Mar" />
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
       <Field label="T. Ent. Mar (°C)" name="temp_entrada_mar_p" min="-10" max="100" value={data.temp_entrada_mar_p} previousValue={previousRound?.temp_entrada_mar_p} previousTime={previousTime} onChange={onChange} required />
       <Field label="T. Sal. Mar (°C)" name="temp_salida_mar_p" min="0" max="100" value={data.temp_salida_mar_p} previousValue={previousRound?.temp_salida_mar_p} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Entrada (psi)" name="pres_entrada_p" min="-10" max="20" value={data.pres_entrada_p} previousValue={previousRound?.pres_entrada_p} previousTime={previousTime} onChange={onChange} required />
@@ -366,7 +366,7 @@ export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, pr
   <div className="space-y-4">
     {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Compresor*</label>
         <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -384,7 +384,7 @@ export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, pr
       </div>
     </div>
 
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Etapa Compresor*</label>
         <select name="paa_etapa" value={data.paa_etapa || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -445,7 +445,7 @@ export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHoro
   <div className="space-y-4">
     {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Compresor Frigorífico*</label>
         <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -462,7 +462,7 @@ export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHoro
     </div>
 
     <SectionHeader title="Parámetros Sistema" />
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
       <Field label="Frecuencia (Hz)" name="frecuencia_c" min="0" max="61" value={data.frecuencia_c} previousValue={previousRound?.frecuencia_c} previousTime={previousTime} onChange={onChange} required />
       <Field label="RPM Motor" name="rpm_motor_c" min="0" max="1850" value={data.rpm_motor_c} previousValue={previousRound?.rpm_motor_c} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Suc. Bomba" name="pres_succion_comun_c" min="-0.6" max="2" value={data.pres_succion_comun_c} previousValue={previousRound?.pres_succion_comun_c} previousTime={previousTime} onChange={onChange} required />
@@ -512,7 +512,7 @@ export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorom
   <div className="space-y-4">
     {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
       <Field label="P. Entrega (kPa)" name="presion_entrega_pur" min="0" value={data.presion_entrega_pur} previousValue={previousRound?.presion_entrega_pur} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Succión (kPa)" name="presion_succion_pur" min="-10" max="2" value={data.presion_succion_pur} previousValue={previousRound?.presion_succion_pur} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Descarga (kPa)" name="presion_descarga_pur" min="0" max="2" value={data.presion_descarga_pur} previousValue={previousRound?.presion_descarga_pur} previousTime={previousTime} onChange={onChange} required />
@@ -549,7 +549,7 @@ export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro
       </select>
     </div>
     
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
       <Field label="PPM (0-15)" name="ppm_deoiler" min="0" max="15" value={data.ppm_deoiler} previousValue={previousRound?.ppm_deoiler} previousTime={previousTime} onChange={onChange} required />
       <Field label="Flujo (L/h)" name="flujo_deoiler" min="0" value={data.flujo_deoiler} previousValue={previousRound?.flujo_deoiler} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Sentina (kPa)" name="presion_sentina_deoiler" min="0" value={data.presion_sentina_deoiler} previousValue={previousRound?.presion_sentina_deoiler} previousTime={previousTime} onChange={onChange} required />
@@ -563,7 +563,7 @@ export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorom
   <div className="space-y-4">
     {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
     
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Manejadora*</label>
         <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
@@ -576,7 +576,7 @@ export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorom
       </div>
     </div>
 
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
       <Field label="T. Salida (°C)" name="temp_salida_ma" min="0" max="40" value={data.temp_salida_ma} previousValue={previousRound?.temp_salida_ma} previousTime={previousTime} onChange={onChange} required />
       {data.UNIDAD_ACTIVA !== 'Cassete' && (
         <>

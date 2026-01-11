@@ -7,8 +7,11 @@ export default defineConfig(({ mode }) => {
     return {
       base: './',
       server: {
-        port: 3000,
+        port: 5173,
         host: '0.0.0.0',
+        watch: {
+          ignored: ['**/server/database/**']
+        }
       },
       plugins: [react()],
       define: {
