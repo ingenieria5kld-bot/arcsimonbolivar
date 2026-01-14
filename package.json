@@ -1,7 +1,7 @@
 {
   "name": "rondas-arc-simon-bolivar",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.3-beta",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {

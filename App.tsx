@@ -8,7 +8,8 @@ import {
   LOGGED_USER_KEY, 
   EQUIPMENT_LABELS,
   EQUIPMENT_UNITS_MAP,
-  SPECIALTY_EQUIPMENT 
+  SPECIALTY_EQUIPMENT,
+  APP_VERSION 
 } from './constants';
 import { 
   GeneradoresForm, PropulsoresForm, FrigorificosForm, PAAForm,
@@ -27,6 +28,7 @@ import { generateFormalPDF, exportDetailedCSV } from './services/reportService';
 import { initDriveApi, uploadToDrive, performMasterSync } from './services/driveService';
 import { saveToStorage, loadFromStorage, removeFromStorage } from './services/storageService';
 import { parseAndRecoverCSV } from './services/recoveryService';
+import { QRRoundSelection } from './components/QRRoundSelection';
 
 const getNavalGuardRange = () => {
   const now = new Date();
@@ -70,6 +72,7 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [currentOrigin, setCurrentOrigin] = useState('');
   const [isOfflineReady, setIsOfflineReady] = useState(false);
+  const [scannedData, setScannedData] = useState<{ type: EquipmentType, unit: string } | null>(null);
   
   const guardRange = getNavalGuardRange();
 
@@ -152,6 +155,27 @@ const App: React.FC = () => {
         triggerMasterSync(false); 
     }, 300000); // 5 minutos
 
+    return () => clearInterval(timer);
+  }, []);
+
+  // Timer to update session data (Current Hour) dynamically
+  useEffect(() => {
+    const timer = setInterval(() => {
+        // Calculate Current Hour
+        const now = new Date();
+        const h = now.getHours();
+        const currentRoundStr = `${h.toString().padStart(2, '0')}:00`;
+        
+        setSessionData(prev => {
+             // Only update if it's strictly a new hour.
+             // This ensures that "Locked" status updates automatically as time passes.
+             if (prev.ronda_de_inspeccion !== currentRoundStr) {
+                 return { ...prev, ronda_de_inspeccion: currentRoundStr };
+             }
+             return prev;
+        });
+
+    }, 60000); 
     return () => clearInterval(timer);
   }, []);
 
@@ -421,6 +445,30 @@ const App: React.FC = () => {
     // Si estamos editando, buscamos la versión anterior para la auditoría
     const previousVersion = isEditing ? rounds.find(r => r.UNIQUE_KEY === currentRound.UNIQUE_KEY) : null;
 
+    // VALIDACIÓN OBLIGATORIA: HORÓMETRO / HORAS VIRTUALES
+    const is0800 = sessionData.ronda_de_inspeccion === '08:00';
+    const is0900 = sessionData.ronda_de_inspeccion === '09:00';
+    const isMandatoryHour = is0800 || is0900;
+    
+    // Lista de equipos que usan el campo "horometro" (ya sea real o virtual)
+    // Básicamente: Generadores, Propulsores, PAA, Frigorificos, Purificador, Deoiler, Manejadoras, Compresores, Desalinizadores.
+    // O mejor: Si el form lo muestra, es obligatorio.
+    // Como el form lo muestra basado en `is0800 || is0900`, usamos esa condición.
+    // Omitimos equipos que quizás no usan horómetro (ej: Timones? Engranajes tienen RPM pero no horómetro en form?).
+    // Revisando EquipmentForms, SpecialFieldsInput se usa en todos. 
+    // PERO hay que tener cuidado con equipos que NO muestran horómetro nunca (aunque la prop showHorometro sea true).
+    
+    // Simplificación: Si el valor está vacío y es hora de reporte, alertamos.
+    // Excepción: Quizás "GenericEquipment"?
+    // Verificamos si existe el campo en el objeto 'currentRound' y si es hora crítica.
+    
+    if (isMandatoryHour) {
+        if (!currentRound.horometro || currentRound.horometro.toString().trim() === '') {
+             alert('⚠️ CAMPO OBLIGATORIO FALTANTE:\n\nDebes ingresar las "Horas Totales" o "Horómetro" para finalizar esta ronda.\n\n- A las 09:00: Inicio de Guardia (Totales)\n- A las 08:00: Fin de Guardia (Cálculo Diario)');
+             return;
+        }
+    }
+
     let updatedRounds = [...rounds].filter(r => {
       if (isEditing) {
         return r.UNIQUE_KEY !== currentRound.UNIQUE_KEY;
@@ -499,6 +547,13 @@ const App: React.FC = () => {
     triggerMasterSync(false, undefined, updatedRounds);
   };
 
+  // Permissions Logic
+  const isCurrentHour = currentRound.ronda_de_inspeccion === sessionData.ronda_de_inspeccion;
+  const isChief = user?.role === UserRole.CHIEF_ENGINEER || user?.role === UserRole.CHIEF_GUARD;
+  // Solo se bloquea si NO es la hora actual, NO es jefe, Y la ronda YA EXISTE (tiene UNIQUE_KEY).
+  // Si no tiene UNIQUE_KEY, es una ronda nueva (aunque sea de hora pasada - reporte tardío), y debe permitir edición.
+  const isReadOnlyMode = (!isCurrentHour && !isChief && !!currentRound.UNIQUE_KEY);
+
   const renderEquipmentForm = () => {
     const previousRound = [...rounds].reverse().find(r => 
       r.equipo_principal === currentRound.equipo_principal && r.UNIDAD_ACTIVA === currentRound.UNIDAD_ACTIVA
@@ -516,7 +571,8 @@ const App: React.FC = () => {
         showTrim,
         previousRound,
         previousTime: previousRound?.ronda_de_inspeccion,
-        currentRoundTime: sessionData.ronda_de_inspeccion // New Prop for Virtual Meter Logic
+        currentRoundTime: sessionData.ronda_de_inspeccion,
+        readOnly: isReadOnlyMode
     };
 
     switch(currentRound.equipo_principal) {
@@ -568,7 +624,7 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="relative z-10 text-xs text-slate-500 font-mono">
-                   v2.0.0 (Production) • Depto. Ingeniería
+                   v{APP_VERSION} • Depto. Ingeniería
                 </div>
              </div>
 
@@ -691,6 +747,7 @@ const App: React.FC = () => {
                         <span>Registrar Nuevo Personal</span>
                         <span className="group-hover:translate-x-1 transition-transform">→</span>
                         </button>
+                        <p className="text-[10px] text-slate-300 mt-6 font-mono">Versión Instalada: v{APP_VERSION}</p>
                     </div>
                 </div>
              </div>
@@ -1141,9 +1198,15 @@ const App: React.FC = () => {
            <div className="flex flex-col gap-3 pt-10">
               <div className="flex gap-4">
                   <button onClick={() => setActiveView(View.GUARD_STATUS)} className="flex-1 bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-xs">Volver</button>
-                  <button onClick={() => setActiveView(View.ANALYSIS)} className="flex-1 bg-navy text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl">
-                    {currentRound.UNIQUE_KEY ? 'Finalizar Corrección' : 'Verificar Parámetros'}
-                  </button>
+                  {!isReadOnlyMode ? (
+                      <button onClick={() => setActiveView(View.ANALYSIS)} className="flex-1 bg-navy text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl">
+                        {currentRound.UNIQUE_KEY ? 'Finalizar Corrección' : 'Verificar Parámetros'}
+                      </button>
+                  ) : (
+                      <button disabled className="flex-1 bg-slate-200 text-slate-400 py-5 rounded-2xl font-black uppercase text-xs cursor-not-allowed">
+                        Modo Solo Lectura
+                      </button>
+                  )}
               </div>
               
               {currentRound.UNIQUE_KEY && (user?.role === UserRole.CHIEF_ENGINEER || user?.role === UserRole.CHIEF_GUARD) && (
@@ -1163,11 +1226,16 @@ const App: React.FC = () => {
             <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-inner">✓</div>
             <h2 className="text-2xl font-black text-navy uppercase mb-4 tracking-tighter">Parámetros Validados</h2>
             <p className="text-sm text-slate-500 mb-10 font-medium">Los datos se encuentran dentro de los rangos operacionales normales.</p>
-            <button onClick={() => {
-              // Simplemente guardamos con una firma generada automáticamente o vacía
-              // Ya no requerimos el garabato manual
-              finalizeSaveWithSignature(currentRound.signature || "Digital_Check");
-            }} className="w-full bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase shadow-xl tracking-widest hover:scale-[1.02] transition-all">
+            <button 
+                onClick={() => {
+                   if (isReadOnlyMode) return;
+                   finalizeSaveWithSignature(currentRound.signature || "Digital_Check");
+                }} 
+                disabled={isReadOnlyMode}
+                className={`w-full py-5 rounded-2xl font-black text-xs uppercase shadow-xl tracking-widest hover:scale-[1.02] transition-all
+                    ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-navy text-white'}
+                `}
+            >
               {currentRound.UNIQUE_KEY ? 'Aplicar Corrección Auditada' : 'Guardar y Finalizar'}
             </button>
             <button onClick={() => setActiveView(View.EQUIPMENT_LOGGING)} className="w-full mt-6 text-slate-400 font-bold text-xs uppercase tracking-widest">Corregir Lecturas</button>
@@ -1176,6 +1244,8 @@ const App: React.FC = () => {
 
       {/* SignaturePad removed per user request */}
       
+
+
       {activeView === View.QR_SCAN && <QRScanner onScan={(txt) => {
           const parts = txt.trim().split(':');
           if (parts.length >= 2) {
@@ -1183,11 +1253,55 @@ const App: React.FC = () => {
             if (equipmentType) {
               const validUnits = EQUIPMENT_UNITS_MAP[equipmentType] || [];
               const matchedUnit = validUnits.find(u => u.toLowerCase().includes(parts[1].trim().toLowerCase())) || validUnits[0];
-              setCurrentRound({ on_off: 'y', equipo_principal: equipmentType, UNIDAD_ACTIVA: matchedUnit });
-              setActiveView(View.EQUIPMENT_LOGGING);
+              
+              setScannedData({ type: equipmentType, unit: matchedUnit });
+              setActiveView(View.QR_ROUND_SELECTION);
             }
           }
       }} onClose={() => setActiveView(View.DASHBOARD)} />}
+
+      {activeView === View.QR_ROUND_SELECTION && scannedData && (
+        <QRRoundSelection 
+            equipmentType={scannedData.type}
+            unit={scannedData.unit}
+            rounds={rounds}
+            currentRoundTime={sessionData.ronda_de_inspeccion}
+            guardStart={sessionData.guardStart}
+            onCancel={() => {
+                setScannedData(null);
+                setActiveView(View.DASHBOARD);
+            }}
+            onSelect={(time, isPreview) => {
+                // Strict Filtering Logic (Same as QRRoundSelection)
+                const candidates = rounds.filter(r => 
+                    r.equipo_principal === scannedData.type && 
+                    r.UNIDAD_ACTIVA === scannedData.unit && 
+                    r.ronda_de_inspeccion === time &&
+                    r.fecha === sessionData.guardStart.split('T')[0] && // Strict Date Check
+                    !r.isDeleted
+                );
+
+                // Sort by latest update to handle duplicates
+                candidates.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+                const existing = candidates[0];
+                
+                if (existing) {
+                    setCurrentRound({ ...existing });
+                } else {
+                    setCurrentRound({ 
+                        on_off: 'y', 
+                        equipo_principal: scannedData.type, 
+                        UNIDAD_ACTIVA: scannedData.unit,
+                        ronda_de_inspeccion: time,
+                        fecha: sessionData.guardStart.split('T')[0] 
+                    });
+                }
+                setActiveView(View.EQUIPMENT_LOGGING);
+            }}
+        />
+      )}
+
+
       
       {activeView === View.APP_GUIDE && <AppGuide />}
       

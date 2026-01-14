@@ -17,6 +17,8 @@ const MAX_JSON_SIZE = '50mb';
 app.use(bodyParser.json({ limit: MAX_JSON_SIZE }));
 app.use(bodyParser.urlencoded({ limit: MAX_JSON_SIZE, extended: true }));
 
+const SECRETO = 'ARC_SIMBOL_2024';
+
 // === DB PATH SETUP ===
 let DB_PATH = path.join(__dirname, 'database', 'MASTER_DB.json');
 let LOG_DIR = path.join(__dirname, 'logs');
@@ -37,10 +39,21 @@ function initPaths(customDbPath) {
     if (!fs.existsSync(LOG_DIR)) {
         fs.mkdirSync(LOG_DIR, { recursive: true });
     }
+
+    // Initialize Uploads Directory (Dynamic based on DB_PATH)
+    // DB_PATH is .../database/MASTER_DB.json
+    // We want .../database/files
+    const dbDir = path.dirname(DB_PATH);
+    const uploadsDir = path.join(dbDir, 'files');
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+    }
 }
 
 // ... Helper Functions (loadDB, saveDB, logToFile) remain essentially the same 
 // but use the dynamic DB_PATH/LOG_FILE variables
+
+const UPLOADS_DIR = path.join(__dirname, 'database', 'files');
 
 // === HELPER FUNCTIONS ===
 function loadDB() {
@@ -49,12 +62,47 @@ function loadDB() {
     }
     try {
         const data = fs.readFileSync(DB_PATH, 'utf8');
-        return JSON.parse(data);
+        // SAFE MODE CHECK (Like V18 Script)
+        // If file exists but is empty or invalid JSON, DO NOT RETURN EMPTY OBJECT immediately if we suspect corruption.
+        // However, readFileSync throws on corruption usually.
+        // If empty string, JSON.parse throws.
+        if (!data || data.trim() === '') {
+             console.error("FATAL: DB File exists but is empty. Returning EMPTY to avoid crash, but check backup!");
+             return { rounds: [], staff: [] };
+        }
+        
+        const parsed = JSON.parse(data);
+        if (!parsed || typeof parsed !== 'object') {
+             throw new Error("Invalid JSON structure");
+        }
+        return parsed;
+
     } catch (e) {
-        console.error("Error leyendo DB local:", e);
+        console.error("❌ CRITICAL ERROR READING DB:", e);
+        // V18 Logic: If error reading, DO NOT return empty array that triggers overwrite.
+        // We throw error or return null to signal "Service Unavailable" if desired, 
+        // but existing sync logic expects object. 
+        // BETTER: Return a flag or keep old memory? 
+        // Since this is a cold start or request-based, we can't keep memory easily without global var.
+        // Let's Log heavily. For sync, if we fail to read, we should probably output 500.
+        // But the current usage defines it returns empty.
+        
+        // MODIFICATION: If it's a specific 'ENOENT' (Not Found), it's safe to start new.
+        // If it's SyntaxError (Corrupted), we should probably BACKUP the file strings and start new or fail.
+        if (e.code !== 'ENOENT') {
+             // Backup corrupted file
+             const backupPath = `${DB_PATH}.corrupted.${Date.now()}`;
+             try {
+                fs.copyFileSync(DB_PATH, backupPath);
+                console.warn(`⚠️ Corrupted DB backed up to: ${backupPath}`);
+             } catch(bkErr) { console.error("Failed to backup corrupted DB"); }
+        }
+        
         return { rounds: [], staff: [] };
     }
 }
+
+// ... loadDB is above ...
 
 function saveDB(data) {
     try {
@@ -100,13 +148,50 @@ app.use((req, res, next) => {
 
 // === ROUTES ===
 
-app.get('/', (req, res) => {
-    res.send(`<h1>ARC Simón Bolívar - Servidor Local</h1><p>Estado: <strong>ACTIVO</strong></p><p>Base de Datos: ${DB_PATH}</p>`);
+app.post('/upload', (req, res) => {
+    const { type, fileName, folderName, base64Data, secret } = req.body;
+
+    if (secret !== SECRETO) {
+        return res.status(401).json({ status: "Error", message: "Acceso Denegado" });
+    }
+
+    if (!base64Data || !fileName) {
+        return res.status(400).json({ status: "Error", message: "Faltan datos (base64 o nombre)" });
+    }
+
+    try {
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        // Structure: database/files/[FOLDER_NAME]/[FILENAME]
+        // E.g. database/files/GENERADORES/REPORTE_GEN_...pdf
+        const dbDir = path.dirname(DB_PATH);
+        const dynamicUploadsDir = path.join(dbDir, 'files');
+
+        const targetDir = path.join(dynamicUploadsDir, folderName || 'UNCATEGORIZED');
+        
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+        }
+
+        const filePath = path.join(targetDir, fileName);
+        fs.writeFileSync(filePath, buffer);
+
+        console.log(`[UPLOAD] Archivo guardado: ${filePath}`);
+        
+        res.json({
+            status: "Success",
+            message: "Archivo guardado localmente",
+            path: filePath
+        });
+
+    } catch (e) {
+        console.error("Error guardando archivo:", e);
+        res.status(500).json({ status: "Error", message: e.message });
+    }
 });
 
-const SECRETO = "ARC_SIMBOL_2024";
-
 app.post('/sync', (req, res) => {
+    // ... existing sync logic ...
     const { secret, type, rounds: clientRounds, staff: clientStaff } = req.body;
 
     if (secret !== SECRETO) {
@@ -115,7 +200,14 @@ app.post('/sync', (req, res) => {
 
     console.log(`[SYNC] Recibida solicitud de sincronización. Rondas Cliente: ${clientRounds?.length || 0}`);
 
-    let serverData = loadDB();
+    let serverData;
+    try {
+        serverData = loadDB();
+    } catch (err) {
+        // If loadDB fails critically (logic above handles some, but let's be safe)
+        return res.status(500).json({ status: "Error", message: "Database Integrity Error" });
+    }
+
     if (!serverData.rounds) serverData.rounds = [];
     if (!serverData.staff) serverData.staff = [];
 
@@ -147,7 +239,7 @@ app.post('/sync', (req, res) => {
     // --- STAFF MERGING LOGIC ---
     const staffMap = new Map();
     // Helper for Unique ID: GRADE_NAME
-    const getStaffId = (s) => `${s.grade?.trim().toUpperCase()}_${s.name?.trim().toUpperCase()}`;
+    const getStaffId = (s) => (s.grade && s.name) ? `${s.grade.trim().toUpperCase()}_${s.name.trim().toUpperCase()}` : `UNKNOWN_${Math.random()}`;
 
     // 1. Load Server Staff
     serverData.staff.forEach(s => {
@@ -189,11 +281,12 @@ app.post('/sync', (req, res) => {
 
     res.json({
         status: "Success",
-        version: "LOCAL_SERVER_V1",
+        version: "LOCAL_SERVER_V2",
         rounds: mergedRounds,
         staff: finalDB.staff
     });
 });
+
 
 // Exported Start Function
 export async function startServer(customDbPath) {

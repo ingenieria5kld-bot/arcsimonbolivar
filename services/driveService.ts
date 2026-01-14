@@ -117,10 +117,7 @@ export const uploadToDrive = async (blob: Blob, fileName: string, equipmentType:
     
     let targetUrl = baseUrl;
     if (mode === 'LOCAL') {
-        // En local, apuntamos a /upload (aunque falle si no existe, es lo correcto conceptualmente)
-        // targetUrl = `${baseUrl}/upload`; 
-        console.warn("Upload de archivos no soportado en prototipo local (falta endpoint /upload en server)");
-        return true; // Fake success for prototype
+        targetUrl = `${baseUrl}/upload`; 
     }
 
     const options = {

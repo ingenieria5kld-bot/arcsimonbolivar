@@ -5,6 +5,7 @@ export const LOCAL_STORAGE_KEY = 'saved_rounds_v3';
 export const STAFF_LISTS_KEY = 'staff_lists_v3';
 export const LOGGED_USER_KEY = 'logged_sg_user_v3';
 
+export const APP_VERSION = '1.2.3 beta';
 export const DRIVE_ROOT_FOLDER_ID = '1aT7AtfipoDxZ4Yk4QLUWO0Do31jK6mX_';
 
 export const ROUND_TIMES = [

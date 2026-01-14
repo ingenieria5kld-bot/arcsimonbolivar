@@ -11,6 +11,7 @@ interface FormProps {
   previousRound?: RoundData | null;
   previousTime?: string;
   currentRoundTime?: string;
+  readOnly?: boolean;
 }
 
 const Field: React.FC<{ 
@@ -113,7 +114,7 @@ const ObservationsField: React.FC<{ value: string; onChange: any }> = ({ value, 
   </div>
 );
 
-const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound, previousTime, currentRoundTime, showHorometro, showTrim }) => {
+const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound, previousTime, currentRoundTime, showHorometro, showTrim, readOnly }) => {
   // === LOGICA HORÓMETRO VIRTUAL (Manjadoras / Frigorificos) ===
   const isVirtualMeterEquipment = data.equipo_principal === 'frigorificos' || data.equipo_principal === 'manejadoras_aire';
   const hasPrevious = previousRound && previousRound.horometro !== undefined && previousRound.horometro !== null;
@@ -236,6 +237,7 @@ const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound
                previousValue={previousRound?.horometro}
                previousTime={previousTime}
                required 
+               disabled={readOnly}
              />
            )}
         </>
@@ -252,16 +254,18 @@ const SpecialFieldsInput: React.FC<FormProps> = ({ data, onChange, previousRound
           previousTime={previousTime}
           required 
           placeholder="Nivel de Tanque para cálculo de consumo"
+          disabled={readOnly}
         />
       )}
     </div>
   );
 };
 
-export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime, currentRoundTime }) => (
+export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} />}
+    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Unidad de Generación*</label>
@@ -312,13 +316,15 @@ export const GeneradoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
     </div>
 
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime, currentRoundTime }) => (
+export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorometro, showTrim, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} />}
+    {(showHorometro || showTrim) && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} showTrim={showTrim} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Motor Propulsor*</label>
@@ -359,13 +365,15 @@ export const PropulsoresForm: React.FC<FormProps> = ({ data, onChange, showHorom
     </div>
 
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Compresor*</label>
@@ -438,13 +446,15 @@ export const PAAForm: React.FC<FormProps> = ({ data, onChange, showHorometro, pr
     </div>
 
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Compresor Frigorífico*</label>
@@ -505,13 +515,15 @@ export const FrigorificosForm: React.FC<FormProps> = ({ data, onChange, showHoro
     </div>
 
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
       <Field label="P. Entrega (kPa)" name="presion_entrega_pur" min="0" value={data.presion_entrega_pur} previousValue={previousRound?.presion_entrega_pur} previousTime={previousTime} onChange={onChange} required />
       <Field label="P. Succión (kPa)" name="presion_succion_pur" min="-10" max="2" value={data.presion_succion_pur} previousValue={previousRound?.presion_succion_pur} previousTime={previousTime} onChange={onChange} required />
@@ -529,13 +541,15 @@ export const PurificadorForm: React.FC<FormProps> = ({ data, onChange, showHorom
       <Field label="Amperaje (A)" name="amperaje_pur" value={data.amperaje_pur} previousValue={previousRound?.amperaje_pur} previousTime={previousTime} onChange={onChange} required />
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-2 gap-3">
       <select name="ruido_separadora_deoiler" value={data.ruido_separadora_deoiler || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white">
         <option value="">Ruido Separadora</option>
@@ -556,13 +570,15 @@ export const DeoilerForm: React.FC<FormProps> = ({ data, onChange, showHorometro
       <Field label="P. Cebado (kPa)" name="presion_cebado_deoiler" min="0" value={data.presion_cebado_deoiler} previousValue={previousRound?.presion_cebado_deoiler} previousTime={previousTime} onChange={onChange} required />
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Manejadora*</label>
@@ -594,13 +610,15 @@ export const ManejadorasForm: React.FC<FormProps> = ({ data, onChange, showHorom
       )}
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <Field label="Vel. Motor (RPM)" name="velocidad_motor_bt" min="0" max="3600" step="1" value={data.velocidad_motor_bt} previousValue={previousRound?.velocidad_motor_bt} previousTime={previousTime} onChange={onChange} required />
       <Field label="Corriente (A)" name="corriente_motor_bt" value={data.corriente_motor_bt} previousValue={previousRound?.corriente_motor_bt} previousTime={previousTime} onChange={onChange} required />
@@ -617,13 +635,15 @@ export const BowThrusterForm: React.FC<FormProps> = ({ data, onChange, showHorom
 
 
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const EngranajesForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const EngranajesForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Engranaje*</label>
@@ -654,13 +674,15 @@ export const EngranajesForm: React.FC<FormProps> = ({ data, onChange, showHorome
       </select>
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const DesalinizadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const DesalinizadorasForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="flex flex-col gap-1">
         <label className="text-[11px] font-bold text-slate-600 uppercase">Planta*</label>
@@ -695,13 +717,15 @@ export const DesalinizadorasForm: React.FC<FormProps> = ({ data, onChange, showH
       </select>
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const AireComprimidoForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const AireComprimidoForm: React.FC<FormProps> = ({ data, onChange, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <select name="UNIDAD_ACTIVA" value={data.UNIDAD_ACTIVA || ''} onChange={onChange} className="border rounded-lg px-3 py-1.5 text-sm border-slate-200 bg-white" required>
         <option value="Compresor #1">Compresor #1</option>
@@ -726,17 +750,20 @@ export const AireComprimidoForm: React.FC<FormProps> = ({ data, onChange, showHo
       </select>
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
 
-export const GenericEquipmentForm: React.FC<FormProps & { type: EquipmentType }> = ({ data, onChange, type, showHorometro, previousRound, previousTime, currentRoundTime }) => (
+export const GenericEquipmentForm: React.FC<FormProps & { type: EquipmentType }> = ({ data, onChange, type, showHorometro, previousRound, previousTime, currentRoundTime, readOnly }) => (
   <div className="space-y-4">
-    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} />}
+    {showHorometro && <SpecialFieldsInput data={data} onChange={onChange} previousRound={previousRound} previousTime={previousTime} currentRoundTime={currentRoundTime} showHorometro={showHorometro} readOnly={readOnly} />}
     <p className="text-sm text-slate-500 italic">Ingrese parámetros para {type}.</p>
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
        <Field label="Parámetro Principal" name="p1" value={data.p1} previousValue={previousRound?.p1} previousTime={previousTime} onChange={onChange} required />
        <Field label="Parámetro Secundario" name="p2" value={data.p2} previousValue={previousRound?.p2} previousTime={previousTime} onChange={onChange} required />
     </div>
     <ObservationsField value={data.observaciones} onChange={onChange} />
+    </fieldset>
   </div>
 );
