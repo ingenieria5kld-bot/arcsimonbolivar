@@ -1,18 +1,17 @@
-
 import React, { useState, useEffect } from 'react';
 import { View, UserSG, RoundData, StaffLists, EquipmentType, UserRole, UserSpecialty, AuditLog } from './types';
 import { Layout } from './components/Layout';
-import { 
-  LOCAL_STORAGE_KEY, 
-  STAFF_LISTS_KEY, 
-  LOGGED_USER_KEY, 
+import {
+  LOCAL_STORAGE_KEY,
+  STAFF_LISTS_KEY,
+  LOGGED_USER_KEY,
   EQUIPMENT_LABELS,
-  EQUIPMENT_UNITS_MAP 
+  EQUIPMENT_UNITS_MAP
 } from './constants';
-import { 
+import {
   GeneradoresForm, PropulsoresForm, FrigorificosForm, PAAForm,
   PurificadorForm, EngranajesForm, DesalinizadorasForm, ManejadorasForm,
-  DeoilerForm, BowThrusterForm, AireComprimidoForm, GenericEquipmentForm 
+  DeoilerForm, BowThrusterForm, AireComprimidoForm, GenericEquipmentForm
 } from './components/EquipmentForms';
 import { QRScanner } from './components/QRScanner';
 import { TrendsDashboard } from './components/TrendsDashboard';
@@ -22,20 +21,21 @@ import { AdminLists } from './components/AdminLists';
 import { EquipmentHoursView } from './components/EquipmentHoursView';
 import { AppGuide } from './components/AppGuide';
 import { generateFormalPDF, exportDetailedCSV } from './services/reportService';
-import { initDriveApi, authenticateDrive, isDriveLinked, uploadToDrive } from './services/driveService';
+import { initDriveApi, authenticateDrive, isDriveLinked, uploadToDrive, uploadUserState, fetchTeamData } from './services/driveService';
+import { storageService } from './services/storageService';
 
 const getNavalGuardRange = () => {
   const now = new Date();
   const currentHour = now.getHours();
-  
+
   let start = new Date(now);
   start.setMinutes(0, 0, 0);
-  
+
   if (currentHour < 9) {
     start.setDate(start.getDate() - 1);
   }
   start.setHours(9);
-  
+
   let end = new Date(start);
   end.setDate(end.getDate() + 1);
   end.setHours(8);
@@ -61,7 +61,8 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [currentOrigin, setCurrentOrigin] = useState('');
   const [isOfflineReady, setIsOfflineReady] = useState(false);
-  
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
   const guardRange = getNavalGuardRange();
 
   const [sessionData, setSessionData] = useState({
@@ -78,17 +79,25 @@ const App: React.FC = () => {
 
   const [currentRound, setCurrentRound] = useState<Partial<RoundData>>({ on_off: 'y' });
 
+  // 1. Initial Load from Filesystem
   useEffect(() => {
     setCurrentOrigin(window.location.origin);
-    const storedUser = localStorage.getItem(LOGGED_USER_KEY);
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-      setActiveView(View.DASHBOARD);
-    }
-    const storedStaff = localStorage.getItem(STAFF_LISTS_KEY);
-    if (storedStaff) setStaffLists(JSON.parse(storedStaff));
-    const storedRounds = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (storedRounds) setRounds(JSON.parse(storedRounds));
+
+    const loadData = async () => {
+      const storedUser = localStorage.getItem(LOGGED_USER_KEY);
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+        setActiveView(View.DASHBOARD);
+      }
+
+      const loadedStaff = await storageService.loadStaff();
+      setStaffLists(loadedStaff);
+
+      const loadedRounds = await storageService.loadRounds();
+      setRounds(loadedRounds);
+    };
+
+    loadData();
 
     initDriveApi().catch(err => console.error("Error GAPI:", err));
 
@@ -99,23 +108,65 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // 2. Periodic Sync for Chiefs
+  useEffect(() => {
+    if (!isDriveConnected || !user) return;
+
+    // Only Chiefs download other's data
+    if (user.role === UserRole.CHIEF_ENGINEER || user.role === UserRole.CHIEF_GUARD) {
+      const fetchInterval = setInterval(async () => {
+        console.log("Auto-Sync: Fetching team data...");
+        setSyncing(true);
+        try {
+          const teamData = await fetchTeamData();
+          if (teamData.length > 0) {
+            const externalRounds = teamData.flatMap(d => d.rounds || []);
+            // Flatten staff carefully
+            const externalStaff = {
+              sg: teamData.flatMap(d => d.staff?.sg || []),
+              sgi: teamData.flatMap(d => d.staff?.sgi || []),
+              ogi: teamData.flatMap(d => d.staff?.ogi || [])
+            };
+
+            const { mergedRounds, mergedStaff } = storageService.mergeExternalData(rounds, staffLists, externalRounds, externalStaff);
+
+            if (JSON.stringify(mergedRounds) !== JSON.stringify(rounds) || JSON.stringify(mergedStaff) !== JSON.stringify(staffLists)) {
+              setRounds(mergedRounds);
+              setStaffLists(mergedStaff);
+              await storageService.saveRounds(mergedRounds);
+              await storageService.saveStaff(mergedStaff);
+              setLastSyncTime(new Date().toLocaleTimeString());
+              console.log("Auto-Sync: Data merged and updated.");
+            }
+          }
+        } catch (e) {
+          console.error("Auto-Sync Error:", e);
+        } finally {
+          setSyncing(false);
+        }
+      }, 120000); // Every 2 minutes
+
+      return () => clearInterval(fetchInterval);
+    }
+  }, [isDriveConnected, user, rounds, staffLists]);
+
   const handleLogout = () => {
     if (window.confirm("¿Desea cerrar la sesión actual para realizar el cambio de usuario (Relevo)?")) {
       localStorage.removeItem(LOGGED_USER_KEY);
       setUser(null);
-      setCurrentRound({ on_off: 'y' }); 
+      setCurrentRound({ on_off: 'y' });
       setActiveView(View.LOGIN);
     }
   };
 
-  const handleRegister = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const role = formData.get('role') as UserRole;
-    
+
     const isHighRank = role === UserRole.CHIEF_ENGINEER || role === UserRole.CHIEF_GUARD;
     const specialty = isHighRank ? UserSpecialty.ALL : (formData.get('specialty') as UserSpecialty || UserSpecialty.PROPULSION);
-    
+
     const newUser: UserSG = {
       grade: (formData.get('grade') as string).toUpperCase(),
       name: (formData.get('name') as string).toUpperCase(),
@@ -126,12 +177,17 @@ const App: React.FC = () => {
 
     const updatedStaff = { ...staffLists, sg: [...staffLists.sg, newUser] };
     setStaffLists(updatedStaff);
-    localStorage.setItem(STAFF_LISTS_KEY, JSON.stringify(updatedStaff));
-    
+    await storageService.saveStaff(updatedStaff);
+
     setUser(newUser);
     localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(newUser));
     setActiveView(View.DASHBOARD);
     alert("Registro exitoso.");
+
+    // Trigger sync if connected
+    if (isDriveConnected) {
+      uploadUserState(rounds, updatedStaff, newUser);
+    }
   };
 
   const handleDriveSync = async () => {
@@ -148,25 +204,32 @@ const App: React.FC = () => {
 
     setSyncing(true);
     try {
-        const pdfBlob = generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
-        if (pdfBlob) {
-          const fileName = `REPORTE_${reportConfig.equipment.toUpperCase()}_GUARDIA_${reportConfig.date}.pdf`;
-          const success = await uploadToDrive(pdfBlob, fileName, reportConfig.equipment);
-          if (success) alert("Reporte sincronizado con Drive.");
-          else alert("Error al subir archivo. Reintente.");
-        }
+      // 1. Upload DB (Priority)
+      if (user) {
+        const successDB = await uploadUserState(rounds, staffLists, user);
+        if (!successDB) throw new Error("Error al subir base de datos");
+      }
+
+      // 2. Upload PDF Report (Original Feature)
+      const pdfBlob = await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment, false);
+      if (pdfBlob) {
+        const fileName = `REPORTE_${reportConfig.equipment.toUpperCase()}_GUARDIA_${reportConfig.date}.pdf`;
+        const success = await uploadToDrive(pdfBlob, fileName, reportConfig.equipment);
+        if (success) alert(`Sincronización Completa.\nBase de datos actualizada y Reporte PDF subido.`);
+        else alert("Base de datos actualizada, pero hubo error al subir el PDF.");
+      }
     } catch (e) {
-        console.error(e);
+      console.error(e);
+      alert("Error en la sincronización.");
     } finally {
-        setSyncing(false);
+      setSyncing(false);
     }
   };
 
-  const finalizeSaveWithSignature = (signatureBase64: string) => {
+  const finalizeSaveWithSignature = async (signatureBase64: string) => {
     const isEditing = !!currentRound.UNIQUE_KEY;
     const guardStartDate = sessionData.guardStart.split('T')[0];
-    
-    // Si estamos editando, buscamos la versión anterior para la auditoría
+
     const previousVersion = isEditing ? rounds.find(r => r.UNIQUE_KEY === currentRound.UNIQUE_KEY) : null;
 
     let updatedRounds = [...rounds].filter(r => {
@@ -174,8 +237,8 @@ const App: React.FC = () => {
         return r.UNIQUE_KEY !== currentRound.UNIQUE_KEY;
       }
       return !(
-        r.fecha === guardStartDate && 
-        r.ronda_de_inspeccion === sessionData.ronda_de_inspeccion && 
+        r.fecha === guardStartDate &&
+        r.ronda_de_inspeccion === sessionData.ronda_de_inspeccion &&
         r.equipo_principal === currentRound.equipo_principal &&
         r.UNIDAD_ACTIVA === currentRound.UNIDAD_ACTIVA
       );
@@ -210,13 +273,24 @@ const App: React.FC = () => {
 
     updatedRounds.push(newRound);
     setRounds(updatedRounds);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedRounds));
+
+    // Save to persistent storage
+    await storageService.saveRounds(updatedRounds);
+
     alert(isEditing ? "Registro corregido y auditado correctamente." : "Certificado guardado correctamente.");
     setActiveView(View.GUARD_STATUS);
+
+    // Auto-upload if connected
+    if (isDriveConnected && user) {
+      console.log("Auto-uploading changes...");
+      uploadUserState(updatedRounds, staffLists, user).then(ok => {
+        if (ok) console.log("Changes uploaded via Auto-Sync");
+      });
+    }
   };
 
   const renderEquipmentForm = () => {
-    const previousRound = [...rounds].reverse().find(r => 
+    const previousRound = [...rounds].reverse().find(r =>
       r.equipo_principal === currentRound.equipo_principal && r.UNIDAD_ACTIVA === currentRound.UNIDAD_ACTIVA
     ) || null;
 
@@ -225,15 +299,15 @@ const App: React.FC = () => {
     const showHorometro = is0800 || is0900;
     const showTrim = is0800 || is0900;
 
-    const commonProps = { 
-        data: currentRound, 
-        onChange: (e: any) => setCurrentRound(prev => ({ ...prev, [e.target.name]: e.target.value })), 
-        showHorometro,
-        showTrim,
-        previousRound
+    const commonProps = {
+      data: currentRound,
+      onChange: (e: any) => setCurrentRound(prev => ({ ...prev, [e.target.name]: e.target.value })),
+      showHorometro,
+      showTrim,
+      previousRound
     };
 
-    switch(currentRound.equipo_principal) {
+    switch (currentRound.equipo_principal) {
       case EquipmentType.GENERADORES: return <GeneradoresForm {...commonProps} />;
       case EquipmentType.PROPULSORES: return <PropulsoresForm {...commonProps} />;
       case EquipmentType.PAA: return <PAAForm {...commonProps} />;
@@ -250,48 +324,48 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout 
-      activeView={activeView} 
-      setView={setActiveView} 
-      user={user} 
+    <Layout
+      activeView={activeView}
+      setView={setActiveView}
+      user={user}
       onLogout={handleLogout}
       canLogout={!!user}
     >
-      
+
       {activeView === View.LOGIN && (
         <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-xl border border-slate-200 animate-in fade-in zoom-in duration-500">
           <div className="flex flex-col items-center mb-8">
             <div className="w-20 h-20 bg-navy rounded-2xl flex items-center justify-center shadow-lg mb-4">
-               <span className="text-white font-black text-2xl">SB</span>
+              <span className="text-white font-black text-2xl">SB</span>
             </div>
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight text-center">Acceso Ingeniería</h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">ARC Simón Bolívar</p>
           </div>
-          
+
           <form onSubmit={(e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
             const gradeName = formData.get('gradeName') as string;
             const password = formData.get('password') as string;
-            
+
             if (gradeName === "ADMIN 1" && password === "123") {
-                const adminUser: UserSG = { grade: 'ADMIN', name: '1', role: UserRole.CHIEF_ENGINEER, specialty: UserSpecialty.ALL };
-                setUser(adminUser);
-                localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(adminUser));
-                setActiveView(View.DASHBOARD);
+              const adminUser: UserSG = { grade: 'ADMIN', name: '1', role: UserRole.CHIEF_ENGINEER, specialty: UserSpecialty.ALL };
+              setUser(adminUser);
+              localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(adminUser));
+              setActiveView(View.DASHBOARD);
             } else {
-                const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password);
-                if (found) {
-                  const finalUser = { ...found };
-                  if (finalUser.role === UserRole.CHIEF_ENGINEER || finalUser.role === UserRole.CHIEF_GUARD) {
-                    finalUser.specialty = UserSpecialty.ALL;
-                  }
-                  setUser(finalUser);
-                  localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(finalUser));
-                  setActiveView(View.DASHBOARD);
-                } else { 
-                  alert("Usuario o contraseña incorrectos."); 
+              const found = staffLists.sg.find(u => `${u.grade} ${u.name}` === gradeName && u.password === password);
+              if (found) {
+                const finalUser = { ...found };
+                if (finalUser.role === UserRole.CHIEF_ENGINEER || finalUser.role === UserRole.CHIEF_GUARD) {
+                  finalUser.specialty = UserSpecialty.ALL;
                 }
+                setUser(finalUser);
+                localStorage.setItem(LOGGED_USER_KEY, JSON.stringify(finalUser));
+                setActiveView(View.DASHBOARD);
+              } else {
+                alert("Usuario o contraseña incorrectos.");
+              }
             }
           }} className="space-y-4">
             <div className="space-y-1">
@@ -302,7 +376,7 @@ const App: React.FC = () => {
                 {staffLists.sg.map((u, i) => <option key={i} value={`${u.grade} ${u.name}`}>{u.grade} {u.name} ({u.specialty === UserSpecialty.PROPULSION ? 'Mot' : 'Ele'})</option>)}
               </select>
             </div>
-            
+
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Contraseña</label>
               <input name="password" type="password" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50 font-bold outline-none focus:border-navy transition-all" placeholder="••••••••" required />
@@ -315,7 +389,7 @@ const App: React.FC = () => {
 
           <div className="mt-8 pt-6 border-t border-slate-100 text-center">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">¿No está registrado?</p>
-            <button 
+            <button
               onClick={() => setActiveView(View.REGISTER_SG)}
               className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest"
             >
@@ -329,7 +403,7 @@ const App: React.FC = () => {
         <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-xl border border-slate-200 animate-in fade-in zoom-in duration-500">
           <h2 className="text-xl font-black text-navy uppercase tracking-tight mb-2 text-center">Alta de Personal</h2>
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-8 text-center">Departamento de Ingeniería</p>
-          
+
           <form onSubmit={handleRegister} className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-1">
@@ -368,9 +442,9 @@ const App: React.FC = () => {
             <button type="submit" className="w-full bg-navy text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all mt-4">
               Registrar
             </button>
-            <button 
-              type="button" 
-              onClick={() => setActiveView(View.LOGIN)} 
+            <button
+              type="button"
+              onClick={() => setActiveView(View.LOGIN)}
               className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest py-2"
             >
               Cancelar
@@ -397,8 +471,11 @@ const App: React.FC = () => {
                 <span className="text-sm font-bold opacity-80 text-blue-300">División: {user?.specialty === UserSpecialty.PROPULSION ? 'MOTORISTA' : user?.specialty === UserSpecialty.ELECTRICITY ? 'ELECTRICISTA' : 'GLOBAL'}</span>
               </div>
               <div className="mt-4">
-                 <span className="text-2xl font-black text-white">TURNO: {sessionData.ronda_de_inspeccion} HS</span>
+                <span className="text-2xl font-black text-white">TURNO: {sessionData.ronda_de_inspeccion} HS</span>
               </div>
+              {lastSyncTime && (
+                <div className="text-[9px] opacity-60 mt-2 font-mono">Última Sinc: {lastSyncTime}</div>
+              )}
             </div>
             <button onClick={() => setActiveView(View.GENERAL_DATA)} className="absolute bottom-6 right-8 bg-white/10 hover:bg-white/20 px-6 py-2 rounded-xl border border-white/20 text-[10px] font-black uppercase tracking-widest">Ajustar Turno</button>
           </div>
@@ -413,20 +490,20 @@ const App: React.FC = () => {
             {(user?.role === UserRole.CHIEF_ENGINEER || user?.role === UserRole.CHIEF_GUARD) && (
               <DashboardCard title="Personal" desc="Administrar Usuarios" icon="👥" color="bg-slate-50 text-slate-600" onClick={() => setActiveView(View.ADMIN_LISTS)} />
             )}
-            <DashboardCard 
-              title="Cambiar Usuario" 
-              desc="Relevo de Guardia" 
-              icon="🚪" 
-              color="bg-slate-100 text-slate-600" 
-              onClick={handleLogout} 
+            <DashboardCard
+              title="Cambiar Usuario"
+              desc="Relevo de Guardia"
+              icon="🚪"
+              color="bg-slate-100 text-slate-600"
+              onClick={handleLogout}
             />
           </div>
         </div>
       )}
 
       {activeView === View.EQUIPMENT_HOURS && (
-        <EquipmentHoursView 
-          onBack={() => setActiveView(View.DASHBOARD)} 
+        <EquipmentHoursView
+          onBack={() => setActiveView(View.DASHBOARD)}
           isReliefContext={true}
           user={user}
           onConfirmed={() => {
@@ -444,64 +521,63 @@ const App: React.FC = () => {
 
       {activeView === View.SYNC && (
         <div className="max-w-3xl mx-auto bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl border border-slate-100 animate-in fade-in duration-500">
-            <div className="flex justify-between items-start mb-10">
-                <div>
-                  <h2 className="text-3xl font-black text-navy uppercase tracking-tighter leading-none">Gestión de Reportes</h2>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Exportación y Sincronización en la Nube</p>
-                </div>
-                <div className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${isDriveConnected ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                    <span className={`w-2 h-2 rounded-full ${isDriveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
-                    {isDriveConnected ? 'Cloud Conectado' : 'Sin Conexión'}
-                </div>
+          <div className="flex justify-between items-start mb-10">
+            <div>
+              <h2 className="text-3xl font-black text-navy uppercase tracking-tighter leading-none">Gestión de Reportes</h2>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Exportación y Sincronización en la Nube</p>
             </div>
-            
-            <div className="space-y-6 bg-slate-50 p-6 md:p-8 rounded-[2rem] border border-slate-200 mb-8">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Fecha de Guardia</label>
-                    <input type="date" value={reportConfig.date} onChange={e => setReportConfig(p => ({...p, date: e.target.value}))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm outline-none focus:border-navy" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seleccione Sistema</label>
-                    <select value={reportConfig.equipment} onChange={e => setReportConfig(p => ({...p, equipment: e.target.value as EquipmentType}))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm bg-white outline-none focus:border-navy">
-                      {Object.entries(EQUIPMENT_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
-                  </div>
-              </div>
+            <div className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${isDriveConnected ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${isDriveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+              {isDriveConnected ? 'Cloud Conectado' : 'Sin Conexión'}
+            </div>
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                  <button 
-                    onClick={() => generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment)} 
-                    className="flex-1 bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
-                  >
-                    Descargar PDF
-                  </button>
-                  <button 
-                    onClick={handleDriveSync}
-                    disabled={syncing}
-                    className={`flex-1 flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all ${
-                        isDriveConnected 
-                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                        : 'bg-white border-2 border-blue-600 text-blue-600'
-                    }`}
-                  >
-                    {syncing ? 'Sincronizando...' : (isDriveConnected ? 'Subir a Drive' : 'Vincular Google')}
-                  </button>
+          <div className="space-y-6 bg-slate-50 p-6 md:p-8 rounded-[2rem] border border-slate-200 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Fecha de Guardia</label>
+                <input type="date" value={reportConfig.date} onChange={e => setReportConfig(p => ({ ...p, date: e.target.value }))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm outline-none focus:border-navy" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Seleccione Sistema</label>
+                <select value={reportConfig.equipment} onChange={e => setReportConfig(p => ({ ...p, equipment: e.target.value as EquipmentType }))} className="w-full border-2 border-white rounded-xl px-5 py-3 font-bold shadow-sm bg-white outline-none focus:border-navy">
+                  {Object.entries(EQUIPMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
-                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Exportar Base de Datos</p>
-                    <button onClick={() => exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Excel)</button>
-                </div>
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Información de Origen</p>
-                    <code className="text-[9px] font-bold text-blue-600 break-all">{currentOrigin}</code>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+              <button
+                onClick={async () => await generateFormalPDF(rounds, reportConfig.date, reportConfig.equipment)}
+                className="flex-1 bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
+              >
+                Descargar PDF
+              </button>
+              <button
+                onClick={handleDriveSync}
+                disabled={syncing}
+                className={`flex-1 flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all ${isDriveConnected
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-white border-2 border-blue-600 text-blue-600'
+                  }`}
+              >
+                {syncing ? 'Sincronizando...' : (isDriveConnected ? 'Subir a Drive' : 'Vincular Google')}
+              </button>
             </div>
+          </div>
 
-            <button onClick={() => setActiveView(View.DASHBOARD)} className="w-full text-slate-400 font-bold text-xs uppercase hover:text-navy transition-colors">Volver al Dashboard</button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
+              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Exportar Base de Datos</p>
+              <button onClick={async () => await exportDetailedCSV(rounds)} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all">Exportar CSV (Excel)</button>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Información de Origen</p>
+              <code className="text-[9px] font-bold text-blue-600 break-all">{currentOrigin}</code>
+            </div>
+          </div>
+
+          <button onClick={() => setActiveView(View.DASHBOARD)} className="w-full text-slate-400 font-bold text-xs uppercase hover:text-navy transition-colors">Volver al Dashboard</button>
         </div>
       )}
 
@@ -511,33 +587,33 @@ const App: React.FC = () => {
             <h2 className="text-3xl font-black text-navy uppercase tracking-tighter">Ajustar Guardia</h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Configuración de Horarios de Relevo</p>
           </div>
-          
+
           <div className="space-y-8">
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block px-1">Hora de Relevo (Inicio)</label>
-              <input 
-                type="datetime-local" 
-                value={sessionData.guardStart} 
-                onChange={e => setSessionData(p => ({...p, guardStart: e.target.value}))} 
-                className="w-full border-2 border-white rounded-xl px-5 py-4 font-bold shadow-sm outline-none focus:border-navy" 
+              <input
+                type="datetime-local"
+                value={sessionData.guardStart}
+                onChange={e => setSessionData(p => ({ ...p, guardStart: e.target.value }))}
+                className="w-full border-2 border-white rounded-xl px-5 py-4 font-bold shadow-sm outline-none focus:border-navy"
               />
             </div>
-            
+
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block px-1">Hora de Entrega (Fin)</label>
-              <input 
-                type="datetime-local" 
-                value={sessionData.guardEnd} 
-                onChange={e => setSessionData(p => ({...p, guardEnd: e.target.value}))} 
-                className="w-full border-2 border-white rounded-xl px-5 py-4 font-bold shadow-sm outline-none focus:border-navy" 
+              <input
+                type="datetime-local"
+                value={sessionData.guardEnd}
+                onChange={e => setSessionData(p => ({ ...p, guardEnd: e.target.value }))}
+                className="w-full border-2 border-white rounded-xl px-5 py-4 font-bold shadow-sm outline-none focus:border-navy"
               />
             </div>
-            
+
             <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100">
               <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-3 block px-1">Condición de la Unidad</label>
-              <select 
-                value={sessionData.condicion} 
-                onChange={e => setSessionData(p => ({...p, condicion: e.target.value}))}
+              <select
+                value={sessionData.condicion}
+                onChange={e => setSessionData(p => ({ ...p, condicion: e.target.value }))}
                 className="w-full border-2 border-white rounded-xl px-5 py-4 font-bold shadow-sm outline-none focus:border-navy bg-white"
               >
                 <option value="Puerto || Fondeado">Puerto || Fondeado</option>
@@ -548,17 +624,17 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-4">
-              <button 
+              <button
                 onClick={() => {
                   alert("Configuración de guardia actualizada.");
                   setActiveView(View.DASHBOARD);
-                }} 
+                }}
                 className="w-full bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
               >
                 Confirmar y Guardar
               </button>
-              <button 
-                onClick={() => setActiveView(View.DASHBOARD)} 
+              <button
+                onClick={() => setActiveView(View.DASHBOARD)}
                 className="w-full text-slate-400 font-bold text-xs uppercase hover:text-navy transition-colors"
               >
                 Cancelar
@@ -573,94 +649,94 @@ const App: React.FC = () => {
       )}
 
       {activeView === View.GUARD_STATUS && (
-        <GuardStatus 
-            rounds={rounds} 
-            guardStart={sessionData.guardStart} 
-            guardEnd={sessionData.guardEnd}
-            activeHour={sessionData.ronda_de_inspeccion}
-            user={user!}
-            onSelectRound={(h, e, u, existingRound) => {
-                const guardDay = sessionData.guardStart.split('T')[0];
-                const isConfirmed = localStorage.getItem(`hours_confirmed_${guardDay}_${user?.specialty}`) === 'true';
+        <GuardStatus
+          rounds={rounds}
+          guardStart={sessionData.guardStart}
+          guardEnd={sessionData.guardEnd}
+          activeHour={sessionData.ronda_de_inspeccion}
+          user={user!}
+          onSelectRound={(h, e, u, existingRound) => {
+            const guardDay = sessionData.guardStart.split('T')[0];
+            const isConfirmed = localStorage.getItem(`hours_confirmed_${guardDay}_${user?.specialty}`) === 'true';
 
-                if (h === '09:00' && !isConfirmed) {
-                    alert(`BLOQUEO OPERATIVO: Es OBLIGATORIO completar y confirmar el Reporte de Horas Diarias antes de iniciar la ronda de las 09:00 AM.`);
-                    setActiveView(View.EQUIPMENT_HOURS);
-                    return;
-                }
+            if (h === '09:00' && !isConfirmed) {
+              alert(`BLOQUEO OPERATIVO: Es OBLIGATORIO completar y confirmar el Reporte de Horas Diarias antes de iniciar la ronda de las 09:00 AM.`);
+              setActiveView(View.EQUIPMENT_HOURS);
+              return;
+            }
 
-                setSessionData(p => ({...p, ronda_de_inspeccion: h}));
-                if (existingRound) {
-                   setCurrentRound({ ...existingRound });
-                } else {
-                   setCurrentRound({ on_off: 'y', equipo_principal: e as EquipmentType, UNIDAD_ACTIVA: u });
-                }
-                setActiveView(View.EQUIPMENT_LOGGING);
-            }}
-            onBack={() => setActiveView(View.DASHBOARD)}
+            setSessionData(p => ({ ...p, ronda_de_inspeccion: h }));
+            if (existingRound) {
+              setCurrentRound({ ...existingRound });
+            } else {
+              setCurrentRound({ on_off: 'y', equipo_principal: e as EquipmentType, UNIDAD_ACTIVA: u });
+            }
+            setActiveView(View.EQUIPMENT_LOGGING);
+          }}
+          onBack={() => setActiveView(View.DASHBOARD)}
         />
       )}
 
       {activeView === View.EQUIPMENT_LOGGING && (
         <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-10 border border-slate-100">
-           <div className="mb-10 border-b border-slate-50 pb-8 flex justify-between items-end">
-                <div>
-                  <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
-                    {currentRound.UNIQUE_KEY ? 'MODO CORRECCIÓN (AUDITADO)' : `Ronda ${sessionData.ronda_de_inspeccion} HS`}
-                  </p>
-                  <h2 className="text-3xl font-black text-navy uppercase tracking-tighter">{EQUIPMENT_LABELS[currentRound.equipo_principal!] || 'Seleccione Equipo'}</h2>
-                  <span className="text-sm font-bold text-slate-400 uppercase tracking-tight">{currentRound.UNIDAD_ACTIVA}</span>
-                </div>
-                {currentRound.audit_trail && (
-                  <div className="bg-amber-50 px-4 py-2 rounded-xl border border-amber-200">
-                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Historial: {currentRound.audit_trail.length} ediciones</span>
-                  </div>
-                )}
-           </div>
-           {renderEquipmentForm()}
-           <div className="flex gap-4 pt-10">
-              <button onClick={() => setActiveView(View.GUARD_STATUS)} className="flex-1 bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-xs">Volver</button>
-              <button onClick={() => setActiveView(View.ANALYSIS)} className="flex-1 bg-navy text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl">
-                {currentRound.UNIQUE_KEY ? 'Finalizar Corrección' : 'Verificar Parámetros'}
-              </button>
-           </div>
+          <div className="mb-10 border-b border-slate-50 pb-8 flex justify-between items-end">
+            <div>
+              <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
+                {currentRound.UNIQUE_KEY ? 'MODO CORRECCIÓN (AUDITADO)' : `Ronda ${sessionData.ronda_de_inspeccion} HS`}
+              </p>
+              <h2 className="text-3xl font-black text-navy uppercase tracking-tighter">{EQUIPMENT_LABELS[currentRound.equipo_principal!] || 'Seleccione Equipo'}</h2>
+              <span className="text-sm font-bold text-slate-400 uppercase tracking-tight">{currentRound.UNIDAD_ACTIVA}</span>
+            </div>
+            {currentRound.audit_trail && (
+              <div className="bg-amber-50 px-4 py-2 rounded-xl border border-amber-200">
+                <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Historial: {currentRound.audit_trail.length} ediciones</span>
+              </div>
+            )}
+          </div>
+          {renderEquipmentForm()}
+          <div className="flex gap-4 pt-10">
+            <button onClick={() => setActiveView(View.GUARD_STATUS)} className="flex-1 bg-slate-100 text-slate-500 py-5 rounded-2xl font-black uppercase text-xs">Volver</button>
+            <button onClick={() => setActiveView(View.ANALYSIS)} className="flex-1 bg-navy text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl">
+              {currentRound.UNIQUE_KEY ? 'Finalizar Corrección' : 'Verificar Parámetros'}
+            </button>
+          </div>
         </div>
       )}
 
       {activeView === View.ANALYSIS && (
         <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-2xl p-8 text-center border border-slate-100">
-            <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-inner">✓</div>
-            <h2 className="text-2xl font-black text-navy uppercase mb-4 tracking-tighter">Parámetros Validados</h2>
-            <p className="text-sm text-slate-500 mb-10 font-medium">Los datos se encuentran dentro de los rangos operacionales normales.</p>
-            <button onClick={() => {
-              if (currentRound.UNIQUE_KEY) {
-                // Si es corrección, no requerimos firma nueva si ya tiene una, pero auditamos
-                finalizeSaveWithSignature(currentRound.signature || "");
-              } else {
-                setActiveView(View.SIGNATURE);
-              }
-            }} className="w-full bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase shadow-xl tracking-widest hover:scale-[1.02] transition-all">
-              {currentRound.UNIQUE_KEY ? 'Aplicar Corrección Auditada' : 'Certificar con Firma'}
-            </button>
-            <button onClick={() => setActiveView(View.EQUIPMENT_LOGGING)} className="w-full mt-6 text-slate-400 font-bold text-xs uppercase tracking-widest">Corregir Lecturas</button>
+          <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-inner">✓</div>
+          <h2 className="text-2xl font-black text-navy uppercase mb-4 tracking-tighter">Parámetros Validados</h2>
+          <p className="text-sm text-slate-500 mb-10 font-medium">Los datos se encuentran dentro de los rangos operacionales normales.</p>
+          <button onClick={() => {
+            if (currentRound.UNIQUE_KEY) {
+              // Si es corrección, no requerimos firma nueva si ya tiene una, pero auditamos
+              finalizeSaveWithSignature(currentRound.signature || "");
+            } else {
+              setActiveView(View.SIGNATURE);
+            }
+          }} className="w-full bg-navy text-white py-5 rounded-2xl font-black text-xs uppercase shadow-xl tracking-widest hover:scale-[1.02] transition-all">
+            {currentRound.UNIQUE_KEY ? 'Aplicar Corrección Auditada' : 'Certificar con Firma'}
+          </button>
+          <button onClick={() => setActiveView(View.EQUIPMENT_LOGGING)} className="w-full mt-6 text-slate-400 font-bold text-xs uppercase tracking-widest">Corregir Lecturas</button>
         </div>
       )}
 
       {activeView === View.SIGNATURE && <SignaturePad onSave={finalizeSaveWithSignature} onCancel={() => setActiveView(View.ANALYSIS)} />}
-      
+
       {activeView === View.QR_SCAN && <QRScanner onScan={(txt) => {
-          const parts = txt.trim().split(':');
-          if (parts.length >= 2) {
-            const equipmentType = Object.values(EquipmentType).find(v => v === parts[0].toLowerCase().trim() || v.replace(/_/g, '') === parts[0].toLowerCase().trim().replace(/_/g, ''));
-            if (equipmentType) {
-              const validUnits = EQUIPMENT_UNITS_MAP[equipmentType] || [];
-              const matchedUnit = validUnits.find(u => u.toLowerCase().includes(parts[1].trim().toLowerCase())) || validUnits[0];
-              setCurrentRound({ on_off: 'y', equipo_principal: equipmentType, UNIDAD_ACTIVA: matchedUnit });
-              setActiveView(View.EQUIPMENT_LOGGING);
-            }
+        const parts = txt.trim().split(':');
+        if (parts.length >= 2) {
+          const equipmentType = Object.values(EquipmentType).find(v => v === parts[0].toLowerCase().trim() || v.replace(/_/g, '') === parts[0].toLowerCase().trim().replace(/_/g, ''));
+          if (equipmentType) {
+            const validUnits = EQUIPMENT_UNITS_MAP[equipmentType] || [];
+            const matchedUnit = validUnits.find(u => u.toLowerCase().includes(parts[1].trim().toLowerCase())) || validUnits[0];
+            setCurrentRound({ on_off: 'y', equipo_principal: equipmentType, UNIDAD_ACTIVA: matchedUnit });
+            setActiveView(View.EQUIPMENT_LOGGING);
           }
+        }
       }} onClose={() => setActiveView(View.DASHBOARD)} />}
-      
+
       {activeView === View.TENDENCIES && <TrendsDashboard rounds={rounds} onBack={() => setActiveView(View.DASHBOARD)} />}
     </Layout>
   );

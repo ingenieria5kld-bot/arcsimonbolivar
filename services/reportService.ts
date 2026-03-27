@@ -1,8 +1,56 @@
-
 import { RoundData, EquipmentType } from '../types';
 import { EQUIPMENT_LABELS, ROUND_TIMES } from '../constants';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 
-declare const jspdf: any;
+// Helper to convert blob to base64
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      resolve(base64String.split(',')[1]); // remove data:application/pdf;base64,
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
+const saveAndShareFile = async (blob: Blob, fileName: string) => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const base64Data = await blobToBase64(blob);
+      const savedFile = await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Documents,
+      });
+
+      await Share.share({
+        title: 'Compartir Reporte',
+        text: 'Aquí tienes el reporte solicitado.',
+        url: savedFile.uri,
+        dialogTitle: 'Compartir Reporte',
+      });
+    } catch (error) {
+      console.error('Error saving or sharing file:', error);
+      alert('Error al guardar o compartir el archivo en Android.');
+    }
+  } else {
+    // Fallback for web
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+};
 
 const PARAM_CONFIG: Record<string, { label: string, unit: string }> = {
   // Generales / Compartidos
@@ -154,8 +202,7 @@ const PARAM_CONFIG: Record<string, { label: string, unit: string }> = {
   amperaje_ac: { label: "AMP", unit: "A" }
 };
 
-export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentType: EquipmentType | string, shouldDownload = true): any => {
-  const { jsPDF } = jspdf;
+export const generateFormalPDF = async (rounds: RoundData[], date: string, equipmentType: EquipmentType | string, shouldDownload = true): Promise<any> => {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -259,7 +306,7 @@ export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentTy
       ];
     });
 
-    doc.autoTable({
+    (doc as any).autoTable({
       startY: currentY,
       head: [headerRow1, headerRow2],
       body: tableData,
@@ -345,13 +392,16 @@ export const generateFormalPDF = (rounds: RoundData[], date: string, equipmentTy
     drawPageFooter(index + 1, totalPagesCount);
   });
 
+  const fileName = `REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`;
+  const blob = doc.output('blob');
+
   if (shouldDownload) {
-    doc.save(`REPORTE_${equipmentType.toUpperCase()}_GUARDIA_${date}.pdf`);
+    await saveAndShareFile(blob, fileName);
   }
-  return doc.output('blob');
+  return blob;
 };
 
-export const exportDetailedCSV = (rounds: RoundData[]) => {
+export const exportDetailedCSV = async (rounds: RoundData[]) => {
   if (rounds.length === 0) {
     alert("No hay datos para exportar.");
     return;
@@ -395,12 +445,7 @@ export const exportDetailedCSV = (rounds: RoundData[]) => {
   });
 
   const csvContent = "\uFEFF" + headers.join(";") + "\n" + rows.join("\n");
+  const fileName = `BASE_DATOS_INGENIERIA_ARC_SIMBOL_${new Date().toISOString().split('T')[0]}.csv`;
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `BASE_DATOS_INGENIERIA_ARC_SIMBOL_${new Date().toISOString().split('T')[0]}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  await saveAndShareFile(blob, fileName);
 };
