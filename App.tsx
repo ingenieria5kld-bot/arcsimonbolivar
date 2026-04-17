@@ -309,25 +309,19 @@ const App: React.FC = () => {
                 });
             }
             
-            // GARBAGE COLLECTION ROUNDS + ZOMBIE PREVENTION
+            // GARBAGE COLLECTION ROUNDS + NO ZOMBIE PREVENTION
             if (masterData.rounds) {
                setRounds(currentLocalRounds => { // Changed param name to match logic
                    const masterMap = new Map((masterData.rounds as RoundData[]).map(r => [r.UNIQUE_KEY, r]));
                    const merged = [...(masterData.rounds as RoundData[])];
                    
-                   const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
                    const ONE_HOUR_MS = 60 * 60 * 1000;
                    const now = Date.now();
 
                    currentLocalRounds.forEach(r => {
-                          // ZOMBIE PREVENTION LOGIC:
+                          // Mantener todas las rondas locales, incluso las antiguas
                           if (r.UNIQUE_KEY && !masterMap.has(r.UNIQUE_KEY)) {
-                              const lastUpdate = r.lastUpdated || 0;
-                              // If it's fresh (created/edited recently), we assume it's offline work waiting to upload.
-                              if (now - lastUpdate < TWO_HOURS_MS) {
-                                  merged.push(r);
-                              } 
-                              // Else: It's old and server doesn't have it -> Assume server Hard Deleted it -> Drop/Ignore
+                              merged.push(r); 
                           }
                    });
                    
@@ -338,6 +332,8 @@ const App: React.FC = () => {
                        }
                        return true;
                    });
+                   
+                   saveToStorage(LOCAL_STORAGE_KEY, finalDocs);
                    return finalDocs;
                });
             }

@@ -56,12 +56,12 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
     let successCount = 0;
     let failedCount = 0;
 
-    // Helper to find equipment type key by Label
-    // "Motores Generadores" -> "generadores"
+    // Helper to find equipment type key by Label with Fuzzy Matching
+    const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
     const reverseEquipmentMap: Record<string, string> = {};
     Object.entries(EQUIPMENT_LABELS).forEach(([key, label]) => {
-        reverseEquipmentMap[label] = key;
-        reverseEquipmentMap[label.toUpperCase()] = key;
+        reverseEquipmentMap[normalize(label)] = key;
     });
 
     for (const rowStr of dataRows) {
@@ -75,7 +75,6 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
         const personal = cols[indices['PERSONAL_SG']];
         const horometro = cols[indices['HOROMETRO']];
         const observaciones = cols[indices['OBSERVACIONES']];
-        // REGISTRO_HORA_REAL is optional/fallback
         const timeLog = indices['REGISTRO_HORA_REAL'] !== undefined ? cols[indices['REGISTRO_HORA_REAL']] : new Date().toLocaleString();
 
         if (!folioGuardia || !horaRonda || !sistemaLabel || !unidad) {
@@ -83,10 +82,12 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
             continue;
         }
 
-        const equipoKey = reverseEquipmentMap[sistemaLabel] || reverseEquipmentMap[sistemaLabel.toUpperCase()];
+        // FUZZY MATCH EQUIPMENT
+        const normalizedSistema = normalize(sistemaLabel);
+        const equipoKey = reverseEquipmentMap[normalizedSistema];
         
         if (!equipoKey) {
-             console.warn("Unknown equipment system:", sistemaLabel);
+             console.warn("Unknown equipment system:", sistemaLabel, "(Normalized:", normalizedSistema, ")");
              failedCount++;
              continue;
         }
@@ -94,28 +95,23 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
         // SMART MERGE LOGIC
         const signature = `${folioGuardia}_${horaRonda}_${equipoKey}_${unidad}`;
         
-        // Find if this round already exists (including isDeleted ones if we want to revive them, 
-        // but primarily to merge data into active ones)
+        // Find if this round already exists
         const existingIndex = existingRounds.findIndex(r => 
             `${r.fecha}_${r.ronda_de_inspeccion}_${r.equipo_principal}_${r.UNIDAD_ACTIVA}` === signature
         );
 
         if (existingIndex >= 0) {
-            // Round exists! Let's try to ENRICH it if the CSV has data that is missing locally.
             const existingRound = existingRounds[existingIndex];
             let enriched = false;
 
-            // Map standard fields if missing locally
-            if (!existingRound.observaciones && observaciones) {
+            if (!existingRound.observaciones && observaciones && observaciones !== '[object Object]') {
                 existingRound.observaciones = observaciones;
                 enriched = true;
             }
-            if ((!existingRound.horometro || existingRound.horometro === 0) && horometro && horometro !== '0') {
+            if ((!existingRound.horometro || existingRound.horometro === 0) && horometro && horometro !== '0' && horometro !== '[object Object]') {
                 existingRound.horometro = parseFloat(horometro);
                 enriched = true;
             }
-            // If it was deleted but we have data in CSV, maybe we revive it? 
-            // Let's assume if the user is importing, they want this data visible.
             if (existingRound.isDeleted) {
                 existingRound.isDeleted = false;
                 enriched = true;
@@ -123,33 +119,24 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
 
             // Map Dynamic Params
             headers.forEach((h, i) => {
-                const cleanH = h.split('_(')[0];
+                const cleanH = normalize(h.split('_(')[0]);
                 
-                // Try 1: Lookup by LABEL
-                let paramKey = REVERSE_PARAM_MAP[cleanH] || REVERSE_PARAM_MAP[cleanH.toUpperCase()];
-                
-                // Try 2: Lookup by KEY name directly
+                // Lookup in params (pre-normalized map would be better but let's do it clean)
+                let paramKey: string | undefined;
+                Object.entries(REVERSE_PARAM_MAP).forEach(([label, key]) => {
+                    if (normalize(label) === cleanH) paramKey = key;
+                });
+
                 if (!paramKey) {
-                    const lowerKey = cleanH.toLowerCase();
-                    if (PARAM_CONFIG[lowerKey]) {
-                        paramKey = lowerKey;
-                    }
+                    const lowerH = cleanH.toLowerCase();
+                    if (PARAM_CONFIG[lowerH]) paramKey = lowerH;
                 }
                 
                 if (paramKey) {
                     const val = cols[i];
-                    // If CSV has value AND (Local is missing OR Local is empty)
-                    if (val && val !== '-' && val.trim() !== '') {
+                    if (val && val !== '-' && val.trim() !== '' && val !== '[object Object]') {
                         if (existingRound[paramKey] === undefined || existingRound[paramKey] === '' || existingRound[paramKey] === null) {
                             existingRound[paramKey] = val;
-                            enriched = true;
-                        }
-                    }
-                } else if (cleanH === 'TRIM' || cleanH === 'TRIM_(L)') {
-                    const val = cols[i];
-                    if (val && val !== '-' && val.trim() !== '') {
-                        if (!existingRound.trim) {
-                            existingRound.trim = parseFloat(val);
                             enriched = true;
                         }
                     }
@@ -158,12 +145,10 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
 
             if (enriched) {
                 existingRound.lastUpdated = Date.now();
-                existingRounds[existingIndex] = existingRound; // Update in place
-                successCount++; // Count as success since we improved data
-            } else {
-                // Duplicate with no new info
+                existingRounds[existingIndex] = existingRound;
+                successCount++;
             }
-            continue; // Move to next row, do not create double
+            continue; 
         }
 
         // ... New Round Creation Logic (only if it didn't exist) ...
@@ -187,27 +172,26 @@ export const parseAndRecoverCSV = async (csvContent: string): Promise<{ success:
 
         // Map Dynamic Params for new round
         headers.forEach((h, i) => {
-            const cleanH = h.split('_(')[0];
+            const cleanH = normalize(h.split('_(')[0]);
             
-            // Try 1: Lookup by LABEL
-            let paramKey = REVERSE_PARAM_MAP[cleanH] || REVERSE_PARAM_MAP[cleanH.toUpperCase()];
-            
-            // Try 2: Lookup by KEY name directly
+            let paramKey: string | undefined;
+            Object.entries(REVERSE_PARAM_MAP).forEach(([label, key]) => {
+                if (normalize(label) === cleanH) paramKey = key;
+            });
+
             if (!paramKey) {
-                const lowerKey = cleanH.toLowerCase();
-                if (PARAM_CONFIG[lowerKey]) {
-                    paramKey = lowerKey;
-                }
+                const lowerH = cleanH.toLowerCase();
+                if (PARAM_CONFIG[lowerH]) paramKey = lowerH;
             }
             
             if (paramKey) {
                 const val = cols[i];
-                if (val && val !== '-' && val.trim() !== '') {
+                if (val && val !== '-' && val.trim() !== '' && val !== '[object Object]') {
                     newRound[paramKey] = val;
                 }
-            } else if (cleanH === 'TRIM' || cleanH === 'TRIM_(L)') {
+            } else if (cleanH === 'trim') {
                  const val = cols[i];
-                 if (val && val !== '-' && val.trim() !== '') {
+                 if (val && val !== '-' && val.trim() !== '' && val !== '[object Object]') {
                     newRound.trim = parseFloat(val); 
                  }
             }
